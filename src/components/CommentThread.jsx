@@ -41,7 +41,7 @@ export default function CommentThread({ storyId, currentUser: currentUserProp })
       .from('profiles')
       .select('username')
       .eq('id', currentUser.id)
-      .single()
+      .maybeSingle()
       .then(({ data }) => setProfileUsername(data?.username ?? null))
   }, [currentUser?.id])
 
