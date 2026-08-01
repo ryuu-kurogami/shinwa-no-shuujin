@@ -58,9 +58,9 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit })
         </div>
 
         <div className="flex items-center gap-3 mb-3">
-          <StorySeal span={story.span} />
+          <StorySeal fraseIconica={story.frase_iconica || story.span} portadaUrl={story.portada_url} />
           <span className="text-[#7C8B63] text-xs tracking-[0.15em] uppercase" style={{ fontFamily: "Lora, serif" }}>
-            Tiempo abarcado en el sueño
+            La marca del relato
           </span>
         </div>
 
