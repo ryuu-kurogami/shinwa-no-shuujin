@@ -176,14 +176,14 @@ export default function App() {
           <div className="flex items-center gap-2 mb-4 text-[#7C8B63]">
             <Sparkles size={14} />
             <span className="text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
-              Fragmentos de mundos soñados
+              VESTIGIOS DE UN GENESIS ONIRICO
             </span>
           </div>
           <h1
             className="text-[#EDE6D6] text-5xl sm:text-6xl leading-[1.05] mb-5"
             style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}
           >
-            SHinwa no Shuujin
+            Shinwa no Shuujin
           </h1>
           <p className="text-[#b8afc4] text-[16px] sm:text-lg leading-relaxed max-w-xl mb-8" style={{ fontFamily: "Lora, serif" }}>
             Cada relato es apenas un destello salvado de un universo infinito;
