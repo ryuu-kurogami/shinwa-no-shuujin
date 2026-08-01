@@ -1,36 +1,35 @@
 import React from "react";
 import { Clock } from "lucide-react";
 
-export function StorySeal({ span, portadaUrl }) {
-  // Si hay portada, la mostramos rellenando el sello circular en vez del
-  // ícono de reloj — el mismo espacio, ahora con la imagen del autor.
+export function StorySeal({ fraseIconica, portadaUrl }) {
+  // Con portada: el círculo muestra la imagen completa, sin texto encima.
+  // La frase icónica va debajo, como leyenda — así la portada queda 100% visible.
   if (portadaUrl) {
     return (
-      <div
-        className="relative shrink-0 grid place-items-center w-16 h-16 rounded-full overflow-hidden"
-        style={{
-          boxShadow:
-            "inset 0 2px 4px rgba(255,255,255,0.15), inset 0 -3px 6px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.4)",
-        }}
-      >
-        <img
-          src={portadaUrl}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        {/* Degradado oscuro abajo para que el texto del sello siga siendo legible */}
-        <div className="absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-black/80 to-transparent" />
-        <div className="absolute inset-1 rounded-full border border-[#e8d7b8]/30" />
-        <span
-          className="absolute bottom-1.5 text-[7.5px] tracking-wide text-[#f1e2c4] font-semibold text-center px-1 leading-tight"
-          style={{ fontFamily: "Lora, serif" }}
+      <div className="flex flex-col items-center gap-1 shrink-0 w-16">
+        <div
+          className="relative w-16 h-16 rounded-full overflow-hidden"
+          style={{
+            boxShadow:
+              "inset 0 2px 4px rgba(255,255,255,0.15), inset 0 -3px 6px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.4)",
+          }}
         >
-          {span}
-        </span>
+          <img src={portadaUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          <div className="absolute inset-1 rounded-full border border-[#e8d7b8]/30 pointer-events-none" />
+        </div>
+        {fraseIconica && (
+          <span
+            className="text-[7.5px] tracking-wide text-[#e8c9a3]/90 font-semibold text-center leading-tight italic"
+            style={{ fontFamily: "Lora, serif" }}
+          >
+            {fraseIconica}
+          </span>
+        )}
       </div>
     );
   }
 
+  // Sin portada: el sello original, con la frase icónica superpuesta.
   return (
     <div
       className="relative shrink-0 grid place-items-center w-16 h-16 rounded-full"
@@ -46,7 +45,7 @@ export function StorySeal({ span, portadaUrl }) {
         className="absolute bottom-1.5 text-[7.5px] tracking-wide text-[#f1e2c4] font-semibold text-center px-1 leading-tight"
         style={{ fontFamily: "Lora, serif" }}
       >
-        {span}
+        {fraseIconica}
       </span>
     </div>
   );
@@ -63,7 +62,7 @@ export default function StoryCard({ story, onOpen }) {
       }}
     >
       <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-gradient-to-b from-[#7a2e2e]/0 via-[#7a2e2e] to-[#7a2e2e]/0 opacity-60 group-hover:opacity-100 transition-opacity" />
-      <StorySeal span={story.span} portadaUrl={story.portada_url} />
+      <StorySeal fraseIconica={story.frase_iconica || story.span} portadaUrl={story.portada_url} />
       <div className="min-w-0 flex-1">
         <h3
           className="text-[#EDE6D6] text-xl leading-snug mb-1.5 group-hover:text-[#e8c9a3] transition-colors"

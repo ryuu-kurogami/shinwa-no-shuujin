@@ -8,7 +8,7 @@ const CLOUDINARY_UPLOAD_PRESET = "shinwa_portadas";
 export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const isEditing = Boolean(editingStory);
   const [title, setTitle] = useState(editingStory?.title || "");
-  const [span, setSpan] = useState(editingStory?.span || "");
+  const [fraseIconica, setFraseIconica] = useState(editingStory?.frase_iconica || "");
   const [excerpt, setExcerpt] = useState(editingStory?.excerpt || "");
   const [content, setContent] = useState(editingStory?.content || "");
   const [portadaUrl, setPortadaUrl] = useState(editingStory?.portada_url || "");
@@ -75,7 +75,8 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
     try {
       const payload = {
         title: title.trim(),
-        span: span.trim() || "instante suspendido",
+        span: editingStory?.span || "instante suspendido", // legado, ya no se muestra en el sello
+        frase_iconica: fraseIconica.trim().slice(0, 60) || "Instante suspendido",
         excerpt: excerpt.trim() || content.trim().slice(0, 140) + "...",
         content: content.trim(),
         portada_url: portadaUrl || null,
@@ -158,14 +159,15 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
 
           <div>
             <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Tiempo que abarca (el sello)
+              Frase icónica (el sello) — máx. 60 caracteres
             </label>
             <input
-              value={span}
-              onChange={(e) => setSpan(e.target.value)}
+              value={fraseIconica}
+              onChange={(e) => setFraseIconica(e.target.value.slice(0, 60))}
+              maxLength={60}
               className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
               style={{ fontFamily: "Lora, serif" }}
-              placeholder="ej. 300 años, un solo instante, tres generaciones"
+              placeholder="ej. Donde el tiempo dejó de contar"
             />
           </div>
 
