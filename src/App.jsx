@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Plus, ScrollText, Sparkles } from "lucide-react";
+import { Plus, ScrollText, Sparkles, UserCircle2 } from "lucide-react";
 import { supabase, signInWithGoogle } from "./lib/supabaseClient";
 import AuthButton from "./components/AuthButton";
 import StoryCard from "./components/StoryCard";
 import StoryReader from "./components/StoryReader";
 import PublishModal from "./components/PublishModal";
+import ProfilePage from "./components/ProfilePage";
 
 const CATEGORIAS = [
   { value: "todos", label: "Todos" },
@@ -22,6 +23,7 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingStory, setEditingStory] = useState(null);
   const [categoriaFiltro, setCategoriaFiltro] = useState("todos");
+  const [showProfile, setShowProfile] = useState(false);
 
   // Sesión: se lee al montar y se escucha cualquier cambio (login/logout)
   useEffect(() => {
@@ -59,6 +61,7 @@ export default function App() {
 
   const startEdit = (story) => {
     setOpenStory(null);
+    setShowProfile(false);
     setEditingStory(story);
     setModalOpen(true);
   };
@@ -90,7 +93,18 @@ export default function App() {
         }}
       >
         <header className="max-w-3xl mx-auto px-5 pt-10 sm:pt-14">
-          <div className="flex justify-end mb-8">{authLoaded && <AuthButton user={user} />}</div>
+          <div className="flex justify-end items-center gap-4 mb-8">
+            {authLoaded && user && (
+              <button
+                onClick={() => setShowProfile(true)}
+                className="flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
+                style={{ fontFamily: "Lora, serif" }}
+              >
+                <UserCircle2 size={16} /> Mi perfil
+              </button>
+            )}
+            {authLoaded && <AuthButton user={user} />}
+          </div>
 
           <div className="flex items-center gap-2 mb-4 text-[#7C8B63]">
             <Sparkles size={14} />
@@ -118,6 +132,19 @@ export default function App() {
           </button>
         </header>
 
+        {showProfile && user ? (
+          <ProfilePage
+            user={user}
+            stories={stories}
+            onBack={() => setShowProfile(false)}
+            onEdit={startEdit}
+            onDeleted={handleDeleted}
+            onOpen={(story) => {
+              setShowProfile(false);
+              setOpenStory(story);
+            }}
+          />
+        ) : (
         <main className="max-w-3xl mx-auto px-5 pt-10 pb-24">
           <div className="flex items-center gap-3 mb-5">
             <ScrollText size={16} className="text-[#7C8B63]" />
@@ -165,7 +192,9 @@ export default function App() {
             </div>
           )}
         </main>
+        )}
 
+        {!showProfile && (
         <footer className="max-w-3xl mx-auto px-5 pb-14">
           <div className="h-px bg-[#4a3f52] mb-5" />
           <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
@@ -173,6 +202,7 @@ export default function App() {
             comentarios privados solo los ve el autor de la historia.
           </p>
         </footer>
+        )}
       </div>
 
       {openStory && (
