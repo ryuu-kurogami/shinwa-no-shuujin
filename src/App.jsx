@@ -183,11 +183,12 @@ export default function App() {
             className="text-[#EDE6D6] text-5xl sm:text-6xl leading-[1.05] mb-5"
             style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}
           >
-            Crónicas
+            SHinwa no Shuujin
           </h1>
           <p className="text-[#b8afc4] text-[16px] sm:text-lg leading-relaxed max-w-xl mb-8" style={{ fontFamily: "Lora, serif" }}>
-            Cada historia aquí es un instante rescatado de un mundo mucho más grande — el resto queda sumergido,
-            a propósito, en el sueño del que vino.
+            Cada relato es apenas un destello salvado de un universo infinito;
+           el resto queda sumergido en el letargo del que nació, ese tejido invisible
+           donde cada autor es un Aedo del mito 
           </p>
 
           <button
