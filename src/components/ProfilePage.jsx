@@ -1,12 +1,28 @@
-import React from "react";
-import { ArrowLeft, Pencil, Trash2, ScrollText } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2 } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import { supabase } from "../lib/supabaseClient";
 
 const CATEGORIA_LABEL = { corto: "Corto", novela: "Novela", fanfic: "Fanfic" };
 
-export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, onOpen }) {
+export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, onOpen, onViewAuthor }) {
   const misHistorias = (stories || []).filter((s) => s.author_id === user.id);
+  const [siguiendo, setSiguiendo] = useState([]);
+
+  useEffect(() => {
+    supabase
+      .from("seguidores")
+      .select("seguido_id")
+      .eq("seguidor_id", user.id)
+      .then(({ data }) => setSiguiendo(data || []));
+  }, [user.id]);
+
+  // Nombres de los autores que sigue, tomados de sus propias historias ya
+  // cargadas (evita una consulta nueva por cada autor)
+  const nombresSeguidos = siguiendo.map((row) => {
+    const historiaDeEseAutor = (stories || []).find((s) => s.author_id === row.seguido_id);
+    return { id: row.seguido_id, nombre: historiaDeEseAutor?.author_name || "Autor" };
+  });
 
   const remove = async (story) => {
     if (!window.confirm(`¿Borrar "${story.title}"? No se puede deshacer.`)) return;
@@ -33,6 +49,33 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
       <p className="text-[#7d7389] text-sm mb-8" style={{ fontFamily: "Lora, serif" }}>
         {user.user_metadata?.full_name || user.email}
       </p>
+
+      <div className="flex items-center gap-3 mb-5">
+        <UserCircle2 size={16} className="text-[#7C8B63]" />
+        <h2 className="text-[#7C8B63] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Siguiendo ({nombresSeguidos.length})
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+
+      {nombresSeguidos.length === 0 ? (
+        <p className="text-[#7d7389] italic text-sm mb-10" style={{ fontFamily: "Lora, serif" }}>
+          Todavía no seguís a ningún autor.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2 mb-10">
+          {nombresSeguidos.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => onViewAuthor && onViewAuthor(a.id)}
+              className="px-3 py-1.5 rounded-sm border border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              {a.nombre}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center gap-3 mb-5">
         <ScrollText size={16} className="text-[#7C8B63]" />
