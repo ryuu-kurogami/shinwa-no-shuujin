@@ -10,6 +10,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const [title, setTitle] = useState(editingStory?.title || "");
   const [fraseIconica, setFraseIconica] = useState(editingStory?.frase_iconica || "");
   const [categoria, setCategoria] = useState(editingStory?.categoria || "corto");
+  const [tagsInput, setTagsInput] = useState((editingStory?.tags || []).join(", "));
   const [excerpt, setExcerpt] = useState(editingStory?.excerpt || "");
   const [content, setContent] = useState(editingStory?.content || "");
   const [portadaUrl, setPortadaUrl] = useState(editingStory?.portada_url || "");
@@ -79,6 +80,11 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
         span: editingStory?.span || "instante suspendido", // legado, ya no se muestra en el sello
         frase_iconica: fraseIconica.trim().slice(0, 60) || "Instante suspendido",
         categoria,
+        tags: tagsInput
+          .split(",")
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean)
+          .slice(0, 10), // límite razonable, evita spam de tags
         excerpt: excerpt.trim() || content.trim().slice(0, 140) + "...",
         content: content.trim(),
         portada_url: portadaUrl || null,
@@ -171,6 +177,19 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
+              Tags / géneros (separados por coma)
+            </label>
+            <input
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+              style={{ fontFamily: "Lora, serif" }}
+              placeholder="fantasía, terror, viajes en el tiempo"
+            />
           </div>
 
           <div>
