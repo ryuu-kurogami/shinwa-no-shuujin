@@ -195,27 +195,29 @@ export default function App() {
               <div className="flex items-center gap-2 mb-4 text-[#7C8B63]">
                 <Sparkles size={14} />
                 <span className="text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
-                  Fragmentos de mundos soñados
+                  Vestigios de un génesis onírico
                 </span>
               </div>
-              <h1
-                className="text-[#EDE6D6] text-5xl sm:text-6xl leading-[1.05] mb-3"
-                style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}
-              >
-                Crónicas
-              </h1>
 
-              {/* Logo circular — reemplazá /logo.png en tu carpeta public/ por tu propio archivo */}
-              <img
-                src="/logo.png"
-                alt="Shinwa no Shuujin"
-                className="w-20 h-20 rounded-full object-cover mb-5 border border-[#4a3f52]"
-                onError={(e) => (e.target.style.display = "none")}
-              />
+              <div className="flex items-center gap-4 mb-5">
+                {/* Logo circular al lado del título — reemplazá /logo.png en public/ por tu archivo */}
+                <img
+                  src="/logo.png"
+                  alt="Shinwa no Shuujin"
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover shrink-0 border border-[#4a3f52]"
+                  onError={(e) => (e.target.style.display = "none")}
+                />
+                <h1
+                  className="text-[#EDE6D6] text-4xl sm:text-6xl leading-[1.05]"
+                  style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}
+                >
+                  Shinwa no Shuujin
+                </h1>
+              </div>
 
               <p className="text-[#b8afc4] text-[16px] sm:text-lg leading-relaxed max-w-xl mb-8" style={{ fontFamily: "Lora, serif" }}>
-                Cada historia aquí es un instante rescatado de un mundo mucho más grande — el resto queda sumergido,
-                a propósito, en el sueño del que vino.
+                Cada relato es apenas un destello salvado de un universo infinito; el resto queda sumergido en el
+                letargo del que nació, ese tejido invisible donde cada autor es un Aedo del mito.
               </p>
 
               <button
