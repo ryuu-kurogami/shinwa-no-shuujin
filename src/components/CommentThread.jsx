@@ -32,6 +32,21 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
     load();
   }, [load]);
 
+  // Si el usuario está logueado, prellenamos "Tu nombre" con su username
+  // (viene de la tabla profiles) — pero el campo sigue siendo editable,
+  // por si quiere comentar con otro nombre o quedarse anónimo.
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from("profiles")
+      .select("username")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.username) setName((prev) => prev || data.username);
+      });
+  }, [user?.id]);
+
   // Renderiza el widget de Cloudflare Turnstile (captcha)
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY || !window.turnstile || !widgetRef.current) return;
