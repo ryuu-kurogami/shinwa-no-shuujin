@@ -6,6 +6,7 @@ import StoryCard from "./components/StoryCard";
 import StoryReader from "./components/StoryReader";
 import PublishModal from "./components/PublishModal";
 import ProfilePage from "./components/ProfilePage";
+import AuthorProfile from "./components/AuthorProfile";
 
 const CATEGORIAS = [
   { value: "todos", label: "Todos" },
@@ -27,6 +28,7 @@ export default function App() {
   const [busqueda, setBusqueda] = useState("");
   const [tagFiltro, setTagFiltro] = useState(null);
   const [savedIds, setSavedIds] = useState(new Set());
+  const [viewingAuthorId, setViewingAuthorId] = useState(null);
 
   // Sesión: se lee al montar y se escucha cualquier cambio (login/logout)
   useEffect(() => {
@@ -197,7 +199,18 @@ export default function App() {
           </button>
         </header>
 
-        {showProfile && user ? (
+        {viewingAuthorId ? (
+          <AuthorProfile
+            authorId={viewingAuthorId}
+            stories={stories}
+            user={user}
+            onBack={() => setViewingAuthorId(null)}
+            onOpenStory={(story) => {
+              setViewingAuthorId(null);
+              setOpenStory(story);
+            }}
+          />
+        ) : showProfile && user ? (
           <ProfilePage
             user={user}
             stories={stories}
@@ -300,6 +313,7 @@ export default function App() {
                   onOpen={setOpenStory}
                   isSaved={savedIds.has(s.id)}
                   onToggleSave={toggleSave}
+                  onViewAuthor={setViewingAuthorId}
                 />
               ))}
             </div>
@@ -307,7 +321,7 @@ export default function App() {
         </main>
         )}
 
-        {!showProfile && (
+        {!showProfile && !viewingAuthorId && (
         <footer className="max-w-3xl mx-auto px-5 pb-14">
           <div className="h-px bg-[#4a3f52] mb-5" />
           <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
@@ -325,6 +339,10 @@ export default function App() {
           onClose={() => setOpenStory(null)}
           onDeleted={handleDeleted}
           onEdit={startEdit}
+          onViewAuthor={(authorId) => {
+            setOpenStory(null);
+            setViewingAuthorId(authorId);
+          }}
         />
       )}
 

@@ -51,7 +51,7 @@ export function StorySeal({ fraseIconica, portadaUrl }) {
   );
 }
 
-export default function StoryCard({ story, onOpen, isSaved, onToggleSave }) {
+export default function StoryCard({ story, onOpen, isSaved, onToggleSave, onViewAuthor }) {
   return (
     <div
       className="group text-left w-full rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 hover:bg-[#241d2c] transition-colors duration-300 p-5 flex gap-4 items-start relative overflow-hidden"
@@ -90,7 +90,20 @@ export default function StoryCard({ story, onOpen, isSaved, onToggleSave }) {
             {story.excerpt}
           </p>
           <p className="text-[#7d7389] text-xs mt-2" style={{ fontFamily: "Lora, serif" }}>
-            por {story.author_name}
+            por{" "}
+            {onViewAuthor ? (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onViewAuthor(story.author_id);
+                }}
+                className="hover:text-[#b8afc4] hover:underline transition-colors"
+              >
+                {story.author_name}
+              </span>
+            ) : (
+              story.author_name
+            )}
           </p>
         </div>
       </button>

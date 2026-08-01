@@ -4,7 +4,7 @@ import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
 import { supabase, ADMIN_EMAILS, signInWithGoogle } from "../lib/supabaseClient";
 
-export default function StoryReader({ story, user, onClose, onDeleted, onEdit }) {
+export default function StoryReader({ story, user, onClose, onDeleted, onEdit, onViewAuthor }) {
   const [siguiendo, setSiguiendo] = useState(false);
   const [contadorSeguidores, setContadorSeguidores] = useState(null);
 
@@ -119,7 +119,17 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit })
         </h1>
         <div className="flex items-center gap-3 mb-8 flex-wrap">
           <p className="text-[#7d7389] text-sm" style={{ fontFamily: "Lora, serif" }}>
-            por {story.author_name}
+            por{" "}
+            {onViewAuthor ? (
+              <span
+                onClick={() => onViewAuthor(story.author_id)}
+                className="hover:text-[#b8afc4] hover:underline transition-colors cursor-pointer"
+              >
+                {story.author_name}
+              </span>
+            ) : (
+              story.author_name
+            )}
             {contadorSeguidores !== null && (
               <span className="text-[#7d7389]/70"> · {contadorSeguidores} {contadorSeguidores === 1 ? "seguidor" : "seguidores"}</span>
             )}
