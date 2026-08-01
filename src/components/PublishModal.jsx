@@ -66,7 +66,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
     widgetRef.current.open();
   };
 
-  const submit = async (e) => {
+  const submit = async (e, estadoDestino) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) {
       setErr("El título y el texto son obligatorios.");
@@ -88,6 +88,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
         excerpt: excerpt.trim() || content.trim().slice(0, 140) + "...",
         content: content.trim(),
         portada_url: portadaUrl || null,
+        estado: estadoDestino,
       };
 
       // La base de datos (RLS) ya exige que auth.uid() sea el autor para
@@ -128,7 +129,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
           <Feather size={22} className="text-[#7C8B63]" /> {isEditing ? "Editar crónica" : "Nueva crónica"}
         </h2>
 
-        <form onSubmit={submit} className="space-y-4">
+        <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
           <div>
             <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
               Portada
@@ -249,14 +250,26 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
 
           {err && <p className="text-[#e08a8a] text-sm">{err}</p>}
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-50 text-[#EDE6D6] font-medium tracking-wide transition-colors"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            {saving ? (isEditing ? "Guardando..." : "Publicando...") : isEditing ? "Guardar cambios" : "Publicar crónica"}
-          </button>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={(e) => submit(e, "borrador")}
+              disabled={saving}
+              className="flex-1 py-3 rounded-sm border border-[#4a3f52] hover:border-[#B08D57] disabled:opacity-50 text-[#b8afc4] hover:text-[#e8c9a3] font-medium tracking-wide transition-colors"
+              style={{ fontFamily: "Fraunces, serif" }}
+            >
+              {saving ? "Guardando..." : "Guardar borrador"}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => submit(e, "publicado")}
+              disabled={saving}
+              className="flex-1 py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-50 text-[#EDE6D6] font-medium tracking-wide transition-colors"
+              style={{ fontFamily: "Fraunces, serif" }}
+            >
+              {saving ? "Publicando..." : isEditing ? "Guardar y publicar" : "Publicar crónica"}
+            </button>
+          </div>
         </form>
       </div>
     </div>

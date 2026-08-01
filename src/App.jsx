@@ -376,7 +376,9 @@ export default function App() {
           />
         )}
 
-        {tab === "escribir" && user && <EscribirPage onNewStory={openPublish} />}
+        {tab === "escribir" && user && (
+          <EscribirPage user={user} stories={stories} onNewStory={openPublish} onEdit={startEdit} />
+        )}
         </>
         )}
       </div>
