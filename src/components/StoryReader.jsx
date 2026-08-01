@@ -1,15 +1,65 @@
-import React, { useEffect } from "react";
-import { X, Trash2, Pencil } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { X, Trash2, Pencil, UserPlus, UserCheck } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
-import { supabase, ADMIN_EMAILS } from "../lib/supabaseClient";
+import { supabase, ADMIN_EMAILS, signInWithGoogle } from "../lib/supabaseClient";
 
 export default function StoryReader({ story, user, onClose, onDeleted, onEdit }) {
+  const [siguiendo, setSiguiendo] = useState(false);
+  const [contadorSeguidores, setContadorSeguidores] = useState(null);
+
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // Estado de "seguir" al autor de esta historia
+  useEffect(() => {
+    let active = true;
+
+    supabase
+      .from("seguidores")
+      .select("seguidor_id", { count: "exact" })
+      .eq("seguido_id", story.author_id)
+      .then(({ data }) => {
+        if (active) setContadorSeguidores(data?.length ?? 0);
+      });
+
+    if (user) {
+      supabase
+        .from("seguidores")
+        .select("seguido_id")
+        .eq("seguidor_id", user.id)
+        .eq("seguido_id", story.author_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (active) setSiguiendo(Boolean(data));
+        });
+    } else {
+      setSiguiendo(false);
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [user, story.author_id]);
+
+  const toggleSeguir = async () => {
+    if (!user) {
+      signInWithGoogle();
+      return;
+    }
+    if (siguiendo) {
+      await supabase.from("seguidores").delete().eq("seguidor_id", user.id).eq("seguido_id", story.author_id);
+      setSiguiendo(false);
+      setContadorSeguidores((c) => Math.max(0, (c ?? 1) - 1));
+    } else {
+      await supabase.from("seguidores").insert({ seguidor_id: user.id, seguido_id: story.author_id });
+      setSiguiendo(true);
+      setContadorSeguidores((c) => (c ?? 0) + 1);
+    }
+  };
 
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
   const isAuthor = user && user.id === story.author_id;
@@ -67,9 +117,28 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit })
         <h1 className="text-[#EDE6D6] text-3xl sm:text-4xl leading-tight mb-2" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
           {story.title}
         </h1>
-        <p className="text-[#7d7389] text-sm mb-8" style={{ fontFamily: "Lora, serif" }}>
-          por {story.author_name}
-        </p>
+        <div className="flex items-center gap-3 mb-8 flex-wrap">
+          <p className="text-[#7d7389] text-sm" style={{ fontFamily: "Lora, serif" }}>
+            por {story.author_name}
+            {contadorSeguidores !== null && (
+              <span className="text-[#7d7389]/70"> · {contadorSeguidores} {contadorSeguidores === 1 ? "seguidor" : "seguidores"}</span>
+            )}
+          </p>
+          {user?.id !== story.author_id && (
+            <button
+              onClick={toggleSeguir}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-sm border transition-colors ${
+                siguiendo
+                  ? "border-[#7C8B63] text-[#c3d1a8] bg-[#7C8B63]/10"
+                  : "border-[#4a3f52] text-[#7d7389] hover:text-[#b8afc4] hover:border-[#B08D57]"
+              }`}
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              {siguiendo ? <UserCheck size={12} /> : <UserPlus size={12} />}
+              {siguiendo ? "Siguiendo" : "Seguir"}
+            </button>
+          )}
+        </div>
 
         <div className="text-[#d8d1e0] text-[17px] leading-[1.85] whitespace-pre-line" style={{ fontFamily: "Lora, serif" }}>
           {story.content}
