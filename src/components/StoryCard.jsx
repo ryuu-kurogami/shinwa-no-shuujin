@@ -1,5 +1,5 @@
 import React from "react";
-import { Clock } from "lucide-react";
+import { Clock, Bookmark } from "lucide-react";
 
 export function StorySeal({ fraseIconica, portadaUrl }) {
   // Con portada: el círculo muestra la imagen completa, sin texto encima.
@@ -51,10 +51,9 @@ export function StorySeal({ fraseIconica, portadaUrl }) {
   );
 }
 
-export default function StoryCard({ story, onOpen }) {
+export default function StoryCard({ story, onOpen, isSaved, onToggleSave }) {
   return (
-    <button
-      onClick={() => onOpen(story)}
+    <div
       className="group text-left w-full rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 hover:bg-[#241d2c] transition-colors duration-300 p-5 flex gap-4 items-start relative overflow-hidden"
       style={{
         clipPath:
@@ -62,21 +61,39 @@ export default function StoryCard({ story, onOpen }) {
       }}
     >
       <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-gradient-to-b from-[#7a2e2e]/0 via-[#7a2e2e] to-[#7a2e2e]/0 opacity-60 group-hover:opacity-100 transition-opacity" />
-      <StorySeal fraseIconica={story.frase_iconica || story.span} portadaUrl={story.portada_url} />
-      <div className="min-w-0 flex-1">
-        <h3
-          className="text-[#EDE6D6] text-xl leading-snug mb-1.5 group-hover:text-[#e8c9a3] transition-colors"
-          style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}
+
+      {onToggleSave && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSave(story.id);
+          }}
+          className={`absolute top-3 right-3 z-10 transition-colors ${
+            isSaved ? "text-[#B08D57]" : "text-[#7d7389] hover:text-[#b8afc4]"
+          }`}
+          title={isSaved ? "Quitar de guardados" : "Guardar historia"}
         >
-          {story.title}
-        </h3>
-        <p className="text-[#b8afc4] text-[14.5px] leading-relaxed line-clamp-2" style={{ fontFamily: "Lora, serif" }}>
-          {story.excerpt}
-        </p>
-        <p className="text-[#7d7389] text-xs mt-2" style={{ fontFamily: "Lora, serif" }}>
-          por {story.author_name}
-        </p>
-      </div>
-    </button>
+          <Bookmark size={16} fill={isSaved ? "currentColor" : "none"} />
+        </button>
+      )}
+
+      <button onClick={() => onOpen(story)} className="contents text-left cursor-pointer">
+        <StorySeal fraseIconica={story.frase_iconica || story.span} portadaUrl={story.portada_url} />
+        <div className="min-w-0 flex-1">
+          <h3
+            className="text-[#EDE6D6] text-xl leading-snug mb-1.5 group-hover:text-[#e8c9a3] transition-colors pr-6"
+            style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}
+          >
+            {story.title}
+          </h3>
+          <p className="text-[#b8afc4] text-[14.5px] leading-relaxed line-clamp-2" style={{ fontFamily: "Lora, serif" }}>
+            {story.excerpt}
+          </p>
+          <p className="text-[#7d7389] text-xs mt-2" style={{ fontFamily: "Lora, serif" }}>
+            por {story.author_name}
+          </p>
+        </div>
+      </button>
+    </div>
   );
 }

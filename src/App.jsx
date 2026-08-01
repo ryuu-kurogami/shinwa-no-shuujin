@@ -26,6 +26,7 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [tagFiltro, setTagFiltro] = useState(null);
+  const [savedIds, setSavedIds] = useState(new Set());
 
   // Sesión: se lee al montar y se escucha cualquier cambio (login/logout)
   useEffect(() => {
@@ -51,6 +52,42 @@ export default function App() {
   useEffect(() => {
     loadStories();
   }, [loadStories]);
+
+  // Carga los IDs de historias guardadas por el usuario logueado
+  useEffect(() => {
+    if (!user) {
+      setSavedIds(new Set());
+      return;
+    }
+    supabase
+      .from("guardados")
+      .select("historia_id")
+      .eq("usuario_id", user.id)
+      .then(({ data }) => {
+        setSavedIds(new Set((data || []).map((g) => g.historia_id)));
+      });
+  }, [user]);
+
+  const toggleSave = async (storyId) => {
+    if (!user) {
+      signInWithGoogle();
+      return;
+    }
+    const isSaved = savedIds.has(storyId);
+
+    // Actualización optimista: cambia en pantalla antes de esperar la respuesta
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      isSaved ? next.delete(storyId) : next.add(storyId);
+      return next;
+    });
+
+    if (isSaved) {
+      await supabase.from("guardados").delete().eq("usuario_id", user.id).eq("historia_id", storyId);
+    } else {
+      await supabase.from("guardados").insert({ usuario_id: user.id, historia_id: storyId });
+    }
+  };
 
   const openPublish = () => {
     if (!user) {
@@ -257,7 +294,13 @@ export default function App() {
           ) : (
             <div className="space-y-4">
               {storiesFiltradas.map((s) => (
-                <StoryCard key={s.id} story={s} onOpen={setOpenStory} />
+                <StoryCard
+                  key={s.id}
+                  story={s}
+                  onOpen={setOpenStory}
+                  isSaved={savedIds.has(s.id)}
+                  onToggleSave={toggleSave}
+                />
               ))}
             </div>
           )}
