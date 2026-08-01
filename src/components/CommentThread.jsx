@@ -18,6 +18,8 @@ export default function CommentThread({ storyId, currentUser: currentUserProp })
   const turnstileRef = useRef(null)     // el <div> donde se monta el widget
   const widgetIdRef = useRef(null)      // id que devuelve turnstile.render, para poder resetear
 
+  const [profileUsername, setProfileUsername] = useState(null)
+
   // --- Usuario: si no vino por props, lo resolvemos con la sesión de Supabase ---
   useEffect(() => {
     if (currentUserProp) {
@@ -28,6 +30,22 @@ export default function CommentThread({ storyId, currentUser: currentUserProp })
       setCurrentUser(data?.user ?? null)
     })
   }, [currentUserProp])
+
+  // --- Username real desde profiles (no el email) ---
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setProfileUsername(null)
+      return
+    }
+    supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', currentUser.id)
+      .single()
+      .then(({ data }) => setProfileUsername(data?.username ?? null))
+  }, [currentUser?.id])
+
+  const displayUsername = profileUsername || currentUser?.email || 'Usuario'
 
   // --- Cargar comentarios de esta historia ---
   const refreshComments = async () => {
@@ -96,9 +114,7 @@ export default function CommentThread({ storyId, currentUser: currentUserProp })
     setError(null)
 
     const displayName = currentUser
-      ? (showUsername
-          ? (currentUser.user_metadata?.username || currentUser.email)
-          : 'Lector anónimo')
+      ? (showUsername ? displayUsername : 'Lector anónimo')
       : 'Lector anónimo'
 
     const { data, error } = await supabase.functions.invoke('verify-comment', {
@@ -145,7 +161,7 @@ export default function CommentThread({ storyId, currentUser: currentUserProp })
                 checked={showUsername}
                 onChange={(e) => setShowUsername(e.target.checked)}
               />
-              Comentar como {currentUser.user_metadata?.username || currentUser.email}
+              Comentar como {displayUsername}
             </label>
           )}
 

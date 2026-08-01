@@ -1,5 +1,5 @@
 // supabase/functions/verify-comment/index.ts
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from '@supabase/supabase-js'
 
 // En producción, reemplazá '*' por tu dominio real de Vercel para más seguridad,
 // ej: 'https://shinwa-no-shuujin.vercel.app'
@@ -100,7 +100,7 @@ Deno.serve(async (req: Request) => {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
-  } catch (err) {
+  } catch (_err) {
     return new Response(JSON.stringify({ error: 'Error interno' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
