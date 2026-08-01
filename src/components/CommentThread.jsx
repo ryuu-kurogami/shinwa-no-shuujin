@@ -1,199 +1,213 @@
-import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../lib/supabaseClient'
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { MessageCircle, Send, Lock, Trash2 } from "lucide-react";
+import { supabase, ADMIN_EMAILS } from "../lib/supabaseClient";
 
-// Reemplazá por tu site key real de Cloudflare Turnstile (esta sí es pública, va en el frontend sin problema)
-const TURNSTILE_SITE_KEY = '0x4AAAAAAECIafgcYBU-aIn7'
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
-export default function CommentThread({ storyId, currentUser: currentUserProp }) {
-  const [comments, setComments] = useState([])
-  const [commentText, setCommentText] = useState('')
-  const [isPrivate, setIsPrivate] = useState(false)
-  const [showUsername, setShowUsername] = useState(true)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+export default function CommentThread({ storyId, storyAuthorId, user }) {
+  const [comments, setComments] = useState(null);
+  const [name, setName] = useState("");
+  const [text, setText] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState("");
+  const [captchaToken, setCaptchaToken] = useState(null);
+  const widgetRef = useRef(null);
+  const turnstileId = useRef(null);
 
-  const [currentUser, setCurrentUser] = useState(currentUserProp ?? null)
-  const [turnstileToken, setTurnstileToken] = useState(null)
+  const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
+  const isStoryAuthor = user && user.id === storyAuthorId;
+  const canSeePrivate = isAdmin || isStoryAuthor;
 
-  const turnstileRef = useRef(null)     // el <div> donde se monta el widget
-  const widgetIdRef = useRef(null)      // id que devuelve turnstile.render, para poder resetear
-
-  const [profileUsername, setProfileUsername] = useState(null)
-
-  // --- Usuario: si no vino por props, lo resolvemos con la sesión de Supabase ---
-  useEffect(() => {
-    if (currentUserProp) {
-      setCurrentUser(currentUserProp)
-      return
-    }
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUser(data?.user ?? null)
-    })
-  }, [currentUserProp])
-
-  // --- Username real desde profiles (no el email) ---
-  useEffect(() => {
-    if (!currentUser?.id) {
-      setProfileUsername(null)
-      return
-    }
-    supabase
-      .from('profiles')
-      .select('username')
-      .eq('id', currentUser.id)
-      .maybeSingle()
-      .then(({ data }) => setProfileUsername(data?.username ?? null))
-  }, [currentUser?.id])
-
-  const displayUsername = profileUsername || currentUser?.email || 'Usuario'
-
-  // --- Cargar comentarios de esta historia ---
-  const refreshComments = async () => {
+  const load = useCallback(async () => {
     const { data, error } = await supabase
-      .from('comments')
-      .select('*')
-      .eq('story_id', storyId)
-      .order('created_at', { ascending: false })
-
-    if (!error) setComments(data ?? [])
-  }
+      .from("comments")
+      .select("*")
+      .eq("story_id", storyId)
+      .order("created_at", { ascending: false });
+    if (!error) setComments(data);
+  }, [storyId]);
 
   useEffect(() => {
-    refreshComments()
-  }, [storyId])
+    load();
+  }, [load]);
 
-  // --- Montar el widget de Turnstile (el script global ya está en index.html) ---
+  // Renderiza el widget de Cloudflare Turnstile (captcha)
   useEffect(() => {
-    if (!turnstileRef.current) return
-
-    const renderWidget = () => {
-      if (!window.turnstile || widgetIdRef.current) return
-      widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
-        sitekey: TURNSTILE_SITE_KEY,
-        callback: (token) => setTurnstileToken(token),
-        'expired-callback': () => setTurnstileToken(null),
-        'error-callback': () => setTurnstileToken(null),
-      })
-    }
-
-    if (window.turnstile) {
-      renderWidget()
-    } else {
-      // el script tiene async/defer, puede no estar listo todavía
-      const interval = setInterval(() => {
-        if (window.turnstile) {
-          renderWidget()
-          clearInterval(interval)
-        }
-      }, 200)
-      return () => clearInterval(interval)
-    }
-  }, [])
+    if (!TURNSTILE_SITE_KEY || !window.turnstile || !widgetRef.current) return;
+    turnstileId.current = window.turnstile.render(widgetRef.current, {
+      sitekey: TURNSTILE_SITE_KEY,
+      theme: "dark",
+      callback: (token) => setCaptchaToken(token),
+      "expired-callback": () => setCaptchaToken(null),
+      "error-callback": () => setCaptchaToken(null),
+    });
+    return () => {
+      if (turnstileId.current && window.turnstile) {
+        window.turnstile.remove(turnstileId.current);
+      }
+    };
+  }, []);
 
   const resetTurnstile = () => {
-    setTurnstileToken(null)
-    if (window.turnstile && widgetIdRef.current) {
-      window.turnstile.reset(widgetIdRef.current)
+    setCaptchaToken(null);
+    if (turnstileId.current && window.turnstile) window.turnstile.reset(turnstileId.current);
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    if (TURNSTILE_SITE_KEY && !captchaToken) {
+      setErr("Completá el captcha antes de enviar.");
+      return;
     }
-  }
-
-  // --- Envío del comentario ---
-  const handleSubmitComment = async (e) => {
-    e.preventDefault()
-
-    if (!commentText.trim()) {
-      setError('Escribí algo antes de enviar.')
-      return
+    setSending(true);
+    setErr("");
+    try {
+      // El captcha se valida server-side en la Edge Function, y el user_id
+      // se toma del JWT de sesión (no de lo que mandemos acá) — no hay
+      // insert directo a la tabla desde el cliente.
+      const { error } = await supabase.functions.invoke("verify-comment", {
+        body: {
+          token: captchaToken,
+          story_id: storyId,
+          text: text.trim(),
+          is_private: isPrivate,
+          commenter_name: name.trim() || undefined, // si va vacío, la función decide el default
+        },
+      });
+      if (error) throw error;
+      setText("");
+      setIsPrivate(false);
+      resetTurnstile();
+      load();
+    } catch {
+      setErr("No se pudo enviar el comentario. Probá de nuevo.");
+      resetTurnstile();
+    } finally {
+      setSending(false);
     }
-    if (!turnstileToken) {
-      setError('Completá la verificación anti-bots.')
-      return
-    }
+  };
 
-    setLoading(true)
-    setError(null)
-
-    const displayName = currentUser
-      ? (showUsername ? displayUsername : 'Lector anónimo')
-      : 'Lector anónimo'
-
-    const { data, error } = await supabase.functions.invoke('verify-comment', {
-      body: {
-        token: turnstileToken,
-        story_id: storyId,
-        text: commentText,
-        is_private: isPrivate,
-        commenter_name: displayName,
-        user_id: currentUser?.id ?? null,
-      },
-    })
-
-    setLoading(false)
-
-    if (error) {
-      setError('No se pudo enviar el comentario. Intentá de nuevo.')
-      resetTurnstile()
-      return
-    }
-
-    setCommentText('')
-    refreshComments()
-    resetTurnstile()
-  }
+  const deleteComment = async (id) => {
+    if (!isAdmin) return;
+    await supabase.from("comments").delete().eq("id", id);
+    load();
+  };
 
   return (
-    <div className="comment-thread">
-      <h3>Comentarios</h3>
+    <div className="mt-10 pt-8 border-t border-[#4a3f52]">
+      <div className="flex items-center gap-2 mb-5">
+        <MessageCircle size={18} className="text-[#B08D57]" strokeWidth={1.75} />
+        <h4
+          className="text-[#EDE6D6] text-lg"
+          style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}
+        >
+          Ecos de los lectores {comments ? `(${comments.length})` : ""}
+        </h4>
+      </div>
 
-      <form onSubmit={handleSubmitComment} className="comment-form">
+      <form onSubmit={submit} className="mb-7 space-y-2.5">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Tu nombre (opcional)"
+          className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+          style={{ fontFamily: "Lora, serif" }}
+        />
         <textarea
-          value={commentText}
-          onChange={(e) => setCommentText(e.target.value)}
-          placeholder="Escribí un comentario..."
-          rows={3}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Dejá tu eco sobre esta historia..."
+          rows={2}
+          maxLength={1000}
+          className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57] resize-none"
+          style={{ fontFamily: "Lora, serif" }}
         />
 
-        <div className="comment-form-options">
-          {currentUser && (
-            <label>
-              <input
-                type="checkbox"
-                checked={showUsername}
-                onChange={(e) => setShowUsername(e.target.checked)}
-              />
-              Comentar como {displayUsername}
-            </label>
-          )}
+        <label
+          className="flex items-center gap-2 text-xs text-[#b8afc4] cursor-pointer select-none"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          <input
+            type="checkbox"
+            checked={isPrivate}
+            onChange={(e) => setIsPrivate(e.target.checked)}
+            className="accent-[#7C8B63]"
+          />
+          <Lock size={12} /> Enviar solo al autor (privado, nadie más lo ve)
+        </label>
 
-          <label>
-            <input
-              type="checkbox"
-              checked={isPrivate}
-              onChange={(e) => setIsPrivate(e.target.checked)}
-            />
-            Comentario privado (solo lo ve el autor)
-          </label>
+        {TURNSTILE_SITE_KEY && <div ref={widgetRef} />}
+
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={sending || !text.trim()}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-40 transition-colors text-sm text-[#EDE6D6]"
+            style={{ fontFamily: "Lora, serif" }}
+          >
+            <Send size={14} /> Enviar
+          </button>
         </div>
-
-        {/* Widget de Cloudflare Turnstile — se monta acá */}
-        <div ref={turnstileRef} className="turnstile-widget" />
-
-        {error && <p className="comment-error">{error}</p>}
-
-        <button type="submit" disabled={loading || !turnstileToken}>
-          {loading ? 'Enviando...' : 'Comentar'}
-        </button>
+        {err && <p className="text-[#e08a8a] text-xs">{err}</p>}
       </form>
 
-      <ul className="comment-list">
-        {comments.map((c) => (
-          <li key={c.id} className={c.is_private ? 'comment-private' : ''}>
-            <strong>{c.commenter_name}</strong>
-            {c.is_private && <span className="badge-private">Privado</span>}
-            <p>{c.text}</p>
-          </li>
-        ))}
-      </ul>
+      {comments === null ? (
+        <p className="text-[#7d7389] text-sm">Cargando ecos...</p>
+      ) : comments.length === 0 ? (
+        <p className="text-[#7d7389] text-sm italic" style={{ fontFamily: "Lora, serif" }}>
+          Nadie ha dejado un eco todavía. El primero marca el camino.
+        </p>
+      ) : (
+        <ul className="space-y-4">
+          {comments
+            .filter((c) => !c.is_private || canSeePrivate)
+            .map((c) => (
+              <li
+                key={c.id}
+                className={`border-l-2 pl-3.5 ${
+                  c.is_private ? "border-[#B08D57]/60" : "border-[#7C8B63]/50"
+                }`}
+              >
+                <div className="flex items-baseline gap-2 mb-0.5">
+                  <span
+                    className="text-[#e8c9a3] text-sm font-semibold"
+                    style={{ fontFamily: "Lora, serif" }}
+                  >
+                    {c.commenter_name}
+                  </span>
+                  {c.is_private && (
+                    <span className="flex items-center gap-1 text-[#B08D57] text-[10px] uppercase tracking-wide">
+                      <Lock size={10} /> privado
+                    </span>
+                  )}
+                  <span className="text-[#7d7389] text-[11px]">
+                    {new Date(c.created_at).toLocaleDateString("es-ES", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                  {isAdmin && (
+                    <button
+                      onClick={() => deleteComment(c.id)}
+                      className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+                <p
+                  className="text-[#c9c1d4] text-[14.5px] leading-relaxed"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  {c.text}
+                </p>
+              </li>
+            ))}
+        </ul>
+      )}
     </div>
-  )
+  );
 }
