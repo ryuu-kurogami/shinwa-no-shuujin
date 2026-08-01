@@ -1,6 +1,9 @@
-import React, { useState } from "react";
-import { X, Feather } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { X, Feather, ImagePlus } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+
+const CLOUDINARY_CLOUD_NAME = "ahwle70d";
+const CLOUDINARY_UPLOAD_PRESET = "shinwa_portadas";
 
 export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const isEditing = Boolean(editingStory);
@@ -8,8 +11,58 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const [span, setSpan] = useState(editingStory?.span || "");
   const [excerpt, setExcerpt] = useState(editingStory?.excerpt || "");
   const [content, setContent] = useState(editingStory?.content || "");
+  const [portadaUrl, setPortadaUrl] = useState(editingStory?.portada_url || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+
+  const widgetRef = useRef(null);
+
+  // Carga el script del Upload Widget de Cloudinary una sola vez
+  useEffect(() => {
+    if (window.cloudinary) return;
+    const script = document.createElement("script");
+    script.src = "https://upload-widget.cloudinary.com/global/all.js";
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
+
+  const openUploadWidget = () => {
+    if (!window.cloudinary) {
+      setErr("El widget de portadas todavía está cargando, esperá un segundo y probá de nuevo.");
+      return;
+    }
+    if (!widgetRef.current) {
+      widgetRef.current = window.cloudinary.createUploadWidget(
+        {
+          cloudName: CLOUDINARY_CLOUD_NAME,
+          uploadPreset: CLOUDINARY_UPLOAD_PRESET,
+          sources: ["local", "url", "camera"],
+          multiple: false,
+          maxFileSize: 5_000_000, // 5MB
+          cropping: true,
+          croppingAspectRatio: 1, // cuadrada, coherente con el sello circular
+          language: "es",
+          text: {
+            es: {
+              crop: { title: "Recortá tu portada" },
+              local: { browse: "Elegir archivo", dd_title_single: "Arrastrá tu imagen acá" },
+            },
+          },
+        },
+        (uploadError, result) => {
+          if (uploadError) {
+            setErr("No se pudo subir la portada. Probá de nuevo.");
+            return;
+          }
+          if (result?.event === "success") {
+            setPortadaUrl(result.info.secure_url);
+            setErr("");
+          }
+        }
+      );
+    }
+    widgetRef.current.open();
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -25,6 +78,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
         span: span.trim() || "instante suspendido",
         excerpt: excerpt.trim() || content.trim().slice(0, 140) + "...",
         content: content.trim(),
+        portada_url: portadaUrl || null,
       };
 
       // La base de datos (RLS) ya exige que auth.uid() sea el autor para
@@ -66,6 +120,29 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
         </h2>
 
         <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
+              Portada
+            </label>
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={openUploadWidget}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-[#4a3f52] text-[#B08D57] hover:text-[#e8c9a3] hover:border-[#B08D57] transition-colors text-sm"
+                style={{ fontFamily: "Lora, serif" }}
+              >
+                <ImagePlus size={15} /> {portadaUrl ? "Cambiar portada" : "Subir portada"}
+              </button>
+              {portadaUrl && (
+                <img
+                  src={portadaUrl}
+                  alt="Vista previa de la portada"
+                  className="w-14 h-14 rounded-sm object-cover border border-[#4a3f52]"
+                />
+              )}
+            </div>
+          </div>
+
           <div>
             <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
               Título
