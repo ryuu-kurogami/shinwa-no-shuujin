@@ -1,16 +1,36 @@
 // supabase/functions/verify-comment/index.ts
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// En producción, reemplazá '*' por tu dominio real de Vercel para más seguridad,
+// ej: 'https://shinwa-no-shuujin.vercel.app'
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 Deno.serve(async (req: Request) => {
+  // El navegador manda un preflight OPTIONS antes del POST real — hay que responderlo
+  // explícitamente o el POST nunca sale.
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
   try {
     const { token, story_id, text, is_private, commenter_name } = await req.json()
 
     // --- 0. Validaciones básicas de entrada ---
     if (!token || !story_id || !text || typeof text !== 'string' || !text.trim()) {
-      return new Response(JSON.stringify({ error: 'Datos incompletos' }), { status: 400 })
+      return new Response(JSON.stringify({ error: 'Datos incompletos' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
     if (text.length > 2000) {
-      return new Response(JSON.stringify({ error: 'Comentario demasiado largo' }), { status: 400 })
+      return new Response(JSON.stringify({ error: 'Comentario demasiado largo' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     // --- 1. Validar el captcha con Cloudflare (siteverify) ---
@@ -25,7 +45,10 @@ Deno.serve(async (req: Request) => {
     const verifyResult = await verify.json()
 
     if (!verifyResult.success) {
-      return new Response(JSON.stringify({ error: 'Captcha inválido' }), { status: 400 })
+      return new Response(JSON.stringify({ error: 'Captcha inválido' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     // --- 2. Resolver el usuario REAL a partir del JWT, nunca del body ---
@@ -67,14 +90,20 @@ Deno.serve(async (req: Request) => {
     })
 
     if (error) {
-      return new Response(JSON.stringify({ error: error.message }), { status: 400 })
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     return new Response(JSON.stringify({ data }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'Error interno' }), { status: 500 })
+    return new Response(JSON.stringify({ error: 'Error interno' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 })
