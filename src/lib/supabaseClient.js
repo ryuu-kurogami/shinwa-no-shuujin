@@ -23,3 +23,18 @@ export const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || "")
 export async function signInWithGoogle() {
   await supabase.auth.signInWithOAuth({ provider: "google" });
 }
+
+export async function signInWithDiscord() {
+  await supabase.auth.signInWithOAuth({ provider: "discord" });
+}
+
+// Registro con email + contraseña. Supabase manda un mail de confirmación
+// por default (podés desactivarlo en Authentication → Settings si querés
+// que el login sea inmediato sin verificar el correo).
+export async function signUpWithEmail(email, password) {
+  return await supabase.auth.signUp({ email, password });
+}
+
+export async function signInWithEmail(email, password) {
+  return await supabase.auth.signInWithPassword({ email, password });
+}
