@@ -9,6 +9,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const isEditing = Boolean(editingStory);
   const [title, setTitle] = useState(editingStory?.title || "");
   const [fraseIconica, setFraseIconica] = useState(editingStory?.frase_iconica || "");
+  const [categoria, setCategoria] = useState(editingStory?.categoria || "corto");
   const [excerpt, setExcerpt] = useState(editingStory?.excerpt || "");
   const [content, setContent] = useState(editingStory?.content || "");
   const [portadaUrl, setPortadaUrl] = useState(editingStory?.portada_url || "");
@@ -77,6 +78,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
         title: title.trim(),
         span: editingStory?.span || "instante suspendido", // legado, ya no se muestra en el sello
         frase_iconica: fraseIconica.trim().slice(0, 60) || "Instante suspendido",
+        categoria,
         excerpt: excerpt.trim() || content.trim().slice(0, 140) + "...",
         content: content.trim(),
         portada_url: portadaUrl || null,
@@ -141,6 +143,33 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
                   className="w-14 h-14 rounded-sm object-cover border border-[#4a3f52]"
                 />
               )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
+              Categoría
+            </label>
+            <div className="flex gap-2">
+              {[
+                { value: "corto", label: "Corto" },
+                { value: "novela", label: "Novela" },
+                { value: "fanfic", label: "Fanfic" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setCategoria(opt.value)}
+                  className={`px-3 py-1.5 rounded-sm border text-sm transition-colors ${
+                    categoria === opt.value
+                      ? "border-[#B08D57] text-[#e8c9a3] bg-[#B08D57]/10"
+                      : "border-[#4a3f52] text-[#7d7389] hover:text-[#b8afc4]"
+                  }`}
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
 
