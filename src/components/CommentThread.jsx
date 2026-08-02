@@ -17,7 +17,7 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
 
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
   const isStoryAuthor = user && user.id === storyAuthorId;
-  const canSeePrivate = isAdmin || isStoryAuthor;
+  const canSeePrivate = (c) => isAdmin || isStoryAuthor || (user && c.user_id === user.id);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -177,7 +177,7 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
       ) : (
         <ul className="space-y-4">
           {comments
-            .filter((c) => !c.is_private || canSeePrivate)
+            .filter((c) => !c.is_private || canSeePrivate(c))
             .map((c) => (
               <li
                 key={c.id}
