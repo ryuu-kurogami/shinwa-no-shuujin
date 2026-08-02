@@ -10,6 +10,7 @@ import ProfilePage from "./components/ProfilePage";
 import AuthorProfile from "./components/AuthorProfile";
 import BibliotecaPage from "./components/BibliotecaPage";
 import EscribirPage from "./components/EscribirPage";
+import UmbralGate, { pactoYaAceptado } from "./components/UmbralGate";
 
 const CATEGORIAS = [
   { value: "todos", label: "Todos" },
@@ -32,6 +33,7 @@ export default function App() {
   const [savedIds, setSavedIds] = useState(new Set());
   const [viewingAuthorId, setViewingAuthorId] = useState(null);
   const [tab, setTab] = useState("archivo"); // archivo | explorar | biblioteca | perfil | escribir
+  const [umbralCruzado, setUmbralCruzado] = useState(pactoYaAceptado());
 
   // Sesión: se lee al montar y se escucha cualquier cambio (login/logout)
   useEffect(() => {
@@ -165,6 +167,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full" style={{ background: "#17131C" }}>
+      {!umbralCruzado && <UmbralGate onEnter={() => setUmbralCruzado(true)} />}
+
       <NavBar current={tab} onChange={handleChangeTab} user={user} />
 
       <div
