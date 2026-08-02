@@ -2,11 +2,11 @@ import React from "react";
 import { Archive, Compass, Bookmark, UserCircle2, Feather } from "lucide-react";
 
 const TABS = [
-  { value: "archivo", label: "Archivo", icon: Archive },
-  { value: "explorar", label: "Explorar", icon: Compass },
-  { value: "biblioteca", label: "Biblioteca", icon: Bookmark },
-  { value: "perfil", label: "Perfil", icon: UserCircle2 },
-  { value: "escribir", label: "Escribir", icon: Feather },
+  { value: "archivo", label: "Archaium", icon: Archive },
+  { value: "explorar", label: "Vestigare", icon: Compass },
+  { value: "biblioteca", label: "Armarium", icon: Bookmark },
+  { value: "perfil", label: "Adumbratio", icon: UserCircle2 },
+  { value: "escribir", label: "Fabricari", icon: Feather },
 ];
 
 export default function NavBar({ current, onChange, user }) {

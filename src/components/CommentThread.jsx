@@ -118,7 +118,7 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
           className="text-[#EDE6D6] text-lg"
           style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}
         >
-          Ecos de los lectores {comments ? `(${comments.length})` : ""}
+          Registros de los Argonautas {comments ? `(${comments.length})` : ""}
         </h4>
       </div>
 
@@ -133,7 +133,7 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Dejá tu eco sobre esta historia..."
+          placeholder="Dejá tu registro sobre esta historia..."
           rows={2}
           maxLength={1000}
           className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57] resize-none"
@@ -172,7 +172,7 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
         <p className="text-[#7d7389] text-sm">Cargando ecos...</p>
       ) : comments.length === 0 ? (
         <p className="text-[#7d7389] text-sm italic" style={{ fontFamily: "Lora, serif" }}>
-          Nadie ha dejado un eco todavía. El primero marca el camino.
+          Nadie ha dejado un registro todavía. El primero marca el camino.
         </p>
       ) : (
         <ul className="space-y-4">
