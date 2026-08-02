@@ -134,7 +134,7 @@ export default function App() {
 
   const storiesFiltradas = (() => {
     if (!stories) return null;
-    let result = stories;
+    let result = stories.filter((s) => s.estado === "publicado");
     if (categoriaFiltro !== "todos") {
       result = result.filter((s) => (s.categoria || "corto") === categoriaFiltro);
     }
@@ -143,7 +143,7 @@ export default function App() {
 
   const storiesExploradas = (() => {
     if (!stories) return null;
-    let result = stories;
+    let result = stories.filter((s) => s.estado === "publicado");
     if (tagFiltro) {
       result = result.filter((s) => (s.tags || []).includes(tagFiltro));
     }
@@ -160,7 +160,7 @@ export default function App() {
   })();
 
   const tagsDisponibles = stories
-    ? [...new Set(stories.flatMap((s) => s.tags || []))].sort()
+    ? [...new Set(stories.filter((s) => s.estado === "publicado").flatMap((s) => s.tags || []))].sort()
     : [];
 
   return (
