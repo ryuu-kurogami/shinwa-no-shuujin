@@ -1,6 +1,3 @@
-
-
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -741,3 +738,14 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES
 
 
 
+
+-- ============================================================
+-- Trigger de auth.users, agregado a mano: "db dump --linked" no incluye
+-- el esquema auth por default, así que este trigger queda fuera del dump
+-- automático aunque la función handle_new_user() sí se exporta. Sin esto,
+-- los perfiles nuevos no se crean solos al registrarse.
+-- ============================================================
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
