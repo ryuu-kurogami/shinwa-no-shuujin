@@ -1,6 +1,12 @@
 import React, { useState } from "react";
-import { LogIn, Mail, Ghost } from "lucide-react";
-import { signInWithGoogle } from "../lib/supabaseClient";
+import { LogIn, Mail, Ghost, ArrowLeft } from "lucide-react";
+import {
+  supabase,
+  signInWithGoogle,
+  signInWithDiscord,
+  signInWithEmail,
+  signUpWithEmail,
+} from "../lib/supabaseClient";
 
 const STORAGE_KEY = "archaium_pacto_aceptado";
 
@@ -9,12 +15,52 @@ export function pactoYaAceptado() {
 }
 
 export default function UmbralGate({ onEnter }) {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(1); // 1: manifiesto | 2: identidad | 3: email | entering: transición
+  const [emailMode, setEmailMode] = useState("login"); // "login" | "signup"
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const sellarYEntrar = (metodo) => {
-    localStorage.setItem(STORAGE_KEY, "true");
-    if (metodo === "google") signInWithGoogle();
-    onEnter();
+  const marcarPactoAceptado = () => localStorage.setItem(STORAGE_KEY, "true");
+
+  // Google/Discord redirigen fuera de la página — al volver, la sesión ya
+  // existe y el umbral no vuelve a aparecer (localStorage ya quedó marcado).
+  const entrarConOAuth = (proveedor) => {
+    marcarPactoAceptado();
+    if (proveedor === "google") signInWithGoogle();
+    if (proveedor === "discord") signInWithDiscord();
+  };
+
+  const entrarComoSombra = () => {
+    marcarPactoAceptado();
+    setStep("entering");
+    setTimeout(() => onEnter(), 900);
+  };
+
+  const handleEmailSubmit = async (e) => {
+    e.preventDefault();
+    setErr("");
+    setMsg("");
+    setLoading(true);
+    try {
+      if (emailMode === "login") {
+        const { error } = await signInWithEmail(email, password);
+        if (error) throw error;
+        marcarPactoAceptado();
+        setStep("entering");
+        setTimeout(() => onEnter(), 700);
+      } else {
+        const { error } = await signUpWithEmail(email, password);
+        if (error) throw error;
+        setMsg("Tu firma quedó registrada. Revisá tu correo para confirmar antes de entrar.");
+      }
+    } catch (error) {
+      setErr(error.message || "Algo salió mal. Probá de nuevo.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -27,6 +73,14 @@ export default function UmbralGate({ onEnter }) {
       }}
     >
       <div className="max-w-lg mx-auto px-6 py-14 sm:py-20 min-h-screen flex flex-col justify-center">
+        {step === "entering" && (
+          <div className="text-center animate-pulse">
+            <p className="text-[#B08D57] text-sm tracking-[0.3em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+              Cruzando el umbral...
+            </p>
+          </div>
+        )}
+
         {step === 1 && (
           <div className="text-center">
             <span
@@ -95,14 +149,21 @@ Despójate del ruido de la tierra. Prepara tu mente para la travesía.`}
 
             <div className="space-y-3 mb-8">
               <button
-                onClick={() => sellarYEntrar("google")}
+                onClick={() => entrarConOAuth("google")}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-sm border border-[#B08D57] text-[#e8c9a3] hover:bg-[#B08D57]/10 transition-colors text-sm"
                 style={{ fontFamily: "Lora, serif" }}
               >
                 <LogIn size={16} /> Invocar credenciales de Google
               </button>
               <button
-                onClick={() => sellarYEntrar("email")}
+                onClick={() => entrarConOAuth("discord")}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-sm border border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
+                style={{ fontFamily: "Lora, serif" }}
+              >
+                <LogIn size={16} /> Invocar credenciales de Discord
+              </button>
+              <button
+                onClick={() => setStep(3)}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-sm border border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
                 style={{ fontFamily: "Lora, serif" }}
               >
@@ -114,12 +175,79 @@ Despójate del ruido de la tierra. Prepara tu mente para la travesía.`}
               O, si prefieres recorrer estas tierras sin dejar huella...
             </p>
             <button
-              onClick={() => sellarYEntrar("sombra")}
+              onClick={entrarComoSombra}
               className="flex items-center gap-1.5 mx-auto text-[#7d7389] hover:text-[#b8afc4] transition-colors text-sm"
               style={{ fontFamily: "Lora, serif" }}
             >
               <Ghost size={14} /> Cruzar el Umbral como Sombra
             </button>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="text-center">
+            <button
+              onClick={() => {
+                setStep(2);
+                setErr("");
+                setMsg("");
+              }}
+              className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#b8afc4] transition-colors text-sm mb-8 mx-auto"
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              <ArrowLeft size={14} /> Volver
+            </button>
+
+            <div className="flex gap-4 justify-center mb-6 text-sm" style={{ fontFamily: "Lora, serif" }}>
+              <button
+                type="button"
+                onClick={() => { setEmailMode("login"); setErr(""); setMsg(""); }}
+                className={emailMode === "login" ? "text-[#e8c9a3]" : "text-[#7d7389]"}
+              >
+                Ya tengo firma
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEmailMode("signup"); setErr(""); setMsg(""); }}
+                className={emailMode === "signup" ? "text-[#e8c9a3]" : "text-[#7d7389]"}
+              >
+                Registrar firma nueva
+              </button>
+            </div>
+
+            <form onSubmit={handleEmailSubmit} className="space-y-3 text-left">
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="tu@email.com"
+                className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+                style={{ fontFamily: "Lora, serif" }}
+              />
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Contraseña"
+                className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+                style={{ fontFamily: "Lora, serif" }}
+              />
+
+              {err && <p className="text-[#e08a8a] text-xs">{err}</p>}
+              {msg && <p className="text-[#7C8B63] text-xs">{msg}</p>}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-40 transition-colors text-sm text-[#EDE6D6]"
+                style={{ fontFamily: "Fraunces, serif" }}
+              >
+                {loading ? "..." : emailMode === "login" ? "Entrar" : "Registrar firma"}
+              </button>
+            </form>
           </div>
         )}
       </div>
