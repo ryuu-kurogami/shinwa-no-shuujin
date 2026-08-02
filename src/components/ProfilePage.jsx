@@ -1,13 +1,25 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2 } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import { supabase } from "../lib/supabaseClient";
+import EditProfileModal from "./EditProfileModal";
 
 const CATEGORIA_LABEL = { corto: "Corto", novela: "Novela", fanfic: "Fanfic" };
 
 export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, onOpen, onViewAuthor }) {
   const misHistorias = (stories || []).filter((s) => s.author_id === user.id);
   const [siguiendo, setSiguiendo] = useState([]);
+  const [profile, setProfile] = useState(null);
+  const [editandoPerfil, setEditandoPerfil] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from("profiles")
+      .select("username, bio, avatar_url, link_donacion")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => setProfile(data));
+  }, [user.id]);
 
   useEffect(() => {
     supabase
@@ -40,15 +52,59 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
         <ArrowLeft size={16} /> Volver al archivo
       </button>
 
-      <h1
-        className="text-[#EDE6D6] text-3xl sm:text-4xl leading-tight mb-1"
-        style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}
-      >
-        Tu perfil
-      </h1>
-      <p className="text-[#7d7389] text-sm mb-8" style={{ fontFamily: "Lora, serif" }}>
-        {user.user_metadata?.full_name || user.email}
-      </p>
+      <div className="flex items-start gap-4 mb-2">
+        <div
+          className="w-16 h-16 rounded-full shrink-0 overflow-hidden grid place-items-center"
+          style={{ background: "radial-gradient(circle at 35% 30%, #9c6a3d, #7a4f2a 60%, #5c3a1f 100%)" }}
+        >
+          {profile?.avatar_url ? (
+            <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-[#f1e2c4] text-xl" style={{ fontFamily: "Fraunces, serif" }}>
+              {(profile?.username || user.email || "?").charAt(0).toUpperCase()}
+            </span>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h1
+            className="text-[#EDE6D6] text-2xl sm:text-3xl leading-tight"
+            style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}
+          >
+            {profile?.username || "Tu perfil"}
+          </h1>
+          <p className="text-[#7d7389] text-sm" style={{ fontFamily: "Lora, serif" }}>
+            {user.email}
+          </p>
+        </div>
+
+        <button
+          onClick={() => setEditandoPerfil(true)}
+          className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-sm border border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3] transition-colors shrink-0"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          <Settings size={14} /> Editar
+        </button>
+      </div>
+
+      {profile?.bio && (
+        <p className="text-[#b8afc4] text-[15px] leading-relaxed mb-3 max-w-xl" style={{ fontFamily: "Lora, serif" }}>
+          {profile.bio}
+        </p>
+      )}
+
+      {profile?.link_donacion && (
+        <a
+          href={profile.link_donacion}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 mb-8 text-sm text-[#7A2E2E] hover:text-[#a34848] transition-colors"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          <Heart size={13} /> Tu link de donación está activo
+        </a>
+      )}
+      {!profile?.link_donacion && <div className="mb-8" />}
 
       <div className="flex items-center gap-3 mb-5">
         <UserCircle2 size={16} className="text-[#7C8B63]" />
@@ -139,6 +195,15 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
             </div>
           ))}
         </div>
+      )}
+
+      {editandoPerfil && (
+        <EditProfileModal
+          user={user}
+          profile={profile}
+          onClose={() => setEditandoPerfil(false)}
+          onSaved={(nuevoProfile) => setProfile(nuevoProfile)}
+        />
       )}
     </div>
   );
