@@ -31,6 +31,9 @@ export default function App() {
   const [busqueda, setBusqueda] = useState("");
   const [tagFiltro, setTagFiltro] = useState(null);
   const [savedIds, setSavedIds] = useState(new Set());
+  const [likedIds, setLikedIds] = useState(new Set());
+  const [likesCountMap, setLikesCountMap] = useState({});
+  const [ordenExplorar, setOrdenExplorar] = useState("recientes"); // recientes | lecturas | likes
   const [viewingAuthorId, setViewingAuthorId] = useState(null);
   const [tab, setTab] = useState("archivo"); // archivo | explorar | biblioteca | perfil | escribir
   const [umbralCruzado, setUmbralCruzado] = useState(pactoYaAceptado());
@@ -74,6 +77,59 @@ export default function App() {
         setSavedIds(new Set((data || []).map((g) => g.historia_id)));
       });
   }, [user]);
+
+  // Contador de likes por historia (público, no depende de sesión)
+  useEffect(() => {
+    supabase
+      .from("likes")
+      .select("historia_id")
+      .then(({ data }) => {
+        const map = {};
+        (data || []).forEach((row) => {
+          map[row.historia_id] = (map[row.historia_id] || 0) + 1;
+        });
+        setLikesCountMap(map);
+      });
+  }, [stories]);
+
+  // Cuáles le dio like el usuario logueado
+  useEffect(() => {
+    if (!user) {
+      setLikedIds(new Set());
+      return;
+    }
+    supabase
+      .from("likes")
+      .select("historia_id")
+      .eq("usuario_id", user.id)
+      .then(({ data }) => {
+        setLikedIds(new Set((data || []).map((l) => l.historia_id)));
+      });
+  }, [user]);
+
+  const toggleLike = async (storyId) => {
+    if (!user) {
+      signInWithGoogle();
+      return;
+    }
+    const isLiked = likedIds.has(storyId);
+
+    setLikedIds((prev) => {
+      const next = new Set(prev);
+      isLiked ? next.delete(storyId) : next.add(storyId);
+      return next;
+    });
+    setLikesCountMap((prev) => ({
+      ...prev,
+      [storyId]: Math.max(0, (prev[storyId] || 0) + (isLiked ? -1 : 1)),
+    }));
+
+    if (isLiked) {
+      await supabase.from("likes").delete().eq("usuario_id", user.id).eq("historia_id", storyId);
+    } else {
+      await supabase.from("likes").insert({ usuario_id: user.id, historia_id: storyId });
+    }
+  };
 
   const toggleSave = async (storyId) => {
     if (!user) {
@@ -158,6 +214,16 @@ export default function App() {
           s.frase_iconica?.toLowerCase().includes(q)
       );
     }
+
+    if (ordenExplorar === "lecturas") {
+      result = [...result].sort((a, b) => (b.lecturas || 0) - (a.lecturas || 0));
+    } else if (ordenExplorar === "likes") {
+      result = [...result].sort(
+        (a, b) => (likesCountMap[b.id] || 0) - (likesCountMap[a.id] || 0)
+      );
+    }
+    // "recientes" no necesita re-sort, ya viene ordenado desde loadStories()
+
     return result;
   })();
 
@@ -281,6 +347,9 @@ export default function App() {
                       isSaved={savedIds.has(s.id)}
                       onToggleSave={toggleSave}
                       onViewAuthor={handleViewAuthor}
+                      isLiked={likedIds.has(s.id)}
+                      likesCount={likesCountMap[s.id] || 0}
+                      onToggleLike={toggleLike}
                     />
                   ))}
                 </div>
@@ -323,7 +392,7 @@ export default function App() {
             </div>
 
             {tagsDisponibles.length > 0 && (
-              <div className="flex gap-2 mb-8 flex-wrap items-center">
+              <div className="flex gap-2 mb-6 flex-wrap items-center">
                 {tagsDisponibles.map((t) => (
                   <button
                     key={t}
@@ -341,6 +410,27 @@ export default function App() {
               </div>
             )}
 
+            <div className="flex gap-2 mb-8 flex-wrap">
+              {[
+                { value: "recientes", label: "Recientes" },
+                { value: "lecturas", label: "Más leídas" },
+                { value: "likes", label: "Más gustadas" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setOrdenExplorar(opt.value)}
+                  className={`px-3 py-1.5 rounded-sm border text-sm transition-colors ${
+                    ordenExplorar === opt.value
+                      ? "border-[#B08D57] text-[#e8c9a3] bg-[#B08D57]/10"
+                      : "border-[#4a3f52] text-[#7d7389] hover:text-[#b8afc4]"
+                  }`}
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
             {storiesExploradas === null ? (
               <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
             ) : storiesExploradas.length === 0 ? (
@@ -357,6 +447,9 @@ export default function App() {
                     isSaved={savedIds.has(s.id)}
                     onToggleSave={toggleSave}
                     onViewAuthor={handleViewAuthor}
+                    isLiked={likedIds.has(s.id)}
+                    likesCount={likesCountMap[s.id] || 0}
+                    onToggleLike={toggleLike}
                   />
                 ))}
               </div>
@@ -365,7 +458,15 @@ export default function App() {
         )}
 
         {tab === "biblioteca" && user && (
-          <BibliotecaPage stories={stories} savedIds={savedIds} onOpen={setOpenStory} onToggleSave={toggleSave} />
+          <BibliotecaPage
+            stories={stories}
+            savedIds={savedIds}
+            onOpen={setOpenStory}
+            onToggleSave={toggleSave}
+            likedIds={likedIds}
+            likesCountMap={likesCountMap}
+            onToggleLike={toggleLike}
+          />
         )}
 
         {tab === "perfil" && user && (

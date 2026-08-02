@@ -14,6 +14,12 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Cuenta la lectura una sola vez al abrir esta historia
+  useEffect(() => {
+    supabase.rpc("increment_lecturas", { p_story_id: story.id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story.id]);
+
   // Estado de "seguir" al autor de esta historia
   useEffect(() => {
     let active = true;

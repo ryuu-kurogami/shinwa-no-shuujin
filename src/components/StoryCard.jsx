@@ -1,5 +1,5 @@
 import React from "react";
-import { Clock, Bookmark } from "lucide-react";
+import { Clock, Bookmark, Heart } from "lucide-react";
 
 export function StorySeal({ fraseIconica, portadaUrl }) {
   // Con portada: el círculo muestra la imagen completa, sin texto encima.
@@ -51,7 +51,7 @@ export function StorySeal({ fraseIconica, portadaUrl }) {
   );
 }
 
-export default function StoryCard({ story, onOpen, isSaved, onToggleSave, onViewAuthor }) {
+export default function StoryCard({ story, onOpen, isSaved, onToggleSave, onViewAuthor, isLiked, likesCount, onToggleLike }) {
   return (
     <div
       className="group text-left w-full rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 hover:bg-[#241d2c] transition-colors duration-300 p-5 flex gap-4 items-start relative overflow-hidden"
@@ -77,11 +77,27 @@ export default function StoryCard({ story, onOpen, isSaved, onToggleSave, onView
         </button>
       )}
 
+      {onToggleLike && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleLike(story.id);
+          }}
+          className={`absolute top-3 flex items-center gap-1 z-10 transition-colors ${
+            onToggleSave ? "right-9" : "right-3"
+          } ${isLiked ? "text-[#7A2E2E]" : "text-[#7d7389] hover:text-[#b8afc4]"}`}
+          title={isLiked ? "Quitar me gusta" : "Me gusta"}
+        >
+          <Heart size={16} fill={isLiked ? "currentColor" : "none"} />
+          {likesCount > 0 && <span className="text-[11px]">{likesCount}</span>}
+        </button>
+      )}
+
       <button onClick={() => onOpen(story)} className="contents text-left cursor-pointer">
         <StorySeal fraseIconica={story.frase_iconica || story.span} portadaUrl={story.portada_url} />
         <div className="min-w-0 flex-1">
           <h3
-            className="text-[#EDE6D6] text-xl leading-snug mb-1.5 group-hover:text-[#e8c9a3] transition-colors pr-6"
+            className="text-[#EDE6D6] text-xl leading-snug mb-1.5 group-hover:text-[#e8c9a3] transition-colors pr-16"
             style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}
           >
             {story.title}

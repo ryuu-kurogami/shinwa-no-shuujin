@@ -2,7 +2,7 @@ import React from "react";
 import { Bookmark } from "lucide-react";
 import StoryCard from "./StoryCard";
 
-export default function BibliotecaPage({ stories, savedIds, onOpen, onToggleSave }) {
+export default function BibliotecaPage({ stories, savedIds, onOpen, onToggleSave, likedIds, likesCountMap, onToggleLike }) {
   const guardadas = (stories || []).filter((s) => savedIds.has(s.id));
 
   return (
@@ -27,6 +27,9 @@ export default function BibliotecaPage({ stories, savedIds, onOpen, onToggleSave
               onOpen={onOpen}
               isSaved={true}
               onToggleSave={onToggleSave}
+              isLiked={likedIds?.has(s.id)}
+              likesCount={likesCountMap?.[s.id] || 0}
+              onToggleLike={onToggleLike}
             />
           ))}
         </div>
