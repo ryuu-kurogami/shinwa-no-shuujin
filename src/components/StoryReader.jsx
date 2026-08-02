@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { X, Trash2, Pencil, UserPlus, UserCheck } from "lucide-react";
+import { X, Trash2, Pencil, UserPlus, UserCheck, Eye } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
 import { supabase, ADMIN_EMAILS, signInWithGoogle } from "../lib/supabaseClient";
@@ -16,7 +16,9 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
 
   // Cuenta la lectura una sola vez al abrir esta historia
   useEffect(() => {
-    supabase.rpc("increment_lecturas", { p_story_id: story.id });
+    supabase.rpc("increment_lecturas", { p_story_id: story.id }).then(({ error }) => {
+      if (error) console.error("Error al contar lectura:", error.message);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story.id]);
 
@@ -139,6 +141,9 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
             {contadorSeguidores !== null && (
               <span className="text-[#7d7389]/70"> · {contadorSeguidores} {contadorSeguidores === 1 ? "seguidor" : "seguidores"}</span>
             )}
+            <span className="text-[#7d7389]/70 inline-flex items-center gap-1 ml-1">
+              · <Eye size={12} className="inline" /> {story.lecturas || 0}
+            </span>
           </p>
           {user?.id !== story.author_id && (
             <button
