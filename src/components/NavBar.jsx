@@ -1,22 +1,26 @@
 import React from "react";
-import { Archive, Compass, Bookmark, UserCircle2, Feather } from "lucide-react";
+import { Archive, Compass, Bookmark, UserCircle2, Feather, ShieldAlert } from "lucide-react";
 
 const TABS = [
-  { value: "archivo", label: "Archaium", icon: Archive },
-  { value: "explorar", label: "Vestigare", icon: Compass },
-  { value: "biblioteca", label: "Armarium", icon: Bookmark },
-  { value: "perfil", label: "Adumbratio", icon: UserCircle2 },
-  { value: "escribir", label: "Fabricari", icon: Feather },
+  { value: "archivo", label: "Archivo", icon: Archive },
+  { value: "explorar", label: "Explorar", icon: Compass },
+  { value: "biblioteca", label: "Biblioteca", icon: Bookmark },
+  { value: "perfil", label: "Perfil", icon: UserCircle2 },
+  { value: "escribir", label: "Escribir", icon: Feather },
 ];
 
-export default function NavBar({ current, onChange, user }) {
+export default function NavBar({ current, onChange, user, isAdmin }) {
+  const tabs = isAdmin
+    ? [...TABS, { value: "moderacion", label: "Moderación", icon: ShieldAlert }]
+    : TABS;
+
   return (
     <nav
       className="sticky top-0 z-40 border-b border-[#4a3f52] backdrop-blur-md"
       style={{ background: "rgba(23,19,28,0.92)" }}
     >
       <div className="max-w-3xl mx-auto px-5 flex gap-1 overflow-x-auto">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const Icon = tab.icon;
           const isProtected = (tab.value === "perfil" || tab.value === "biblioteca" || tab.value === "escribir") && !user;
           const active = current === tab.value;

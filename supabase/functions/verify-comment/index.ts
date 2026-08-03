@@ -75,11 +75,22 @@ Deno.serve(async (req: Request) => {
       ? (commenter_name || 'Usuario')
       : 'Lector anónimo'
 
-    // --- 3. Insertar con service_role (ignora RLS, pero ya validamos todo arriba) ---
+    // --- 3. Cliente con service_role (ignora RLS, pero ya validamos todo arriba) ---
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
+
+    // --- 3.1 Bloquear si el usuario tiene un baneo vigente ---
+    if (verifiedUserId) {
+      const { data: isBanned } = await supabase.rpc('is_baneado', { p_user_id: verifiedUserId })
+      if (isBanned) {
+        return new Response(JSON.stringify({ error: 'Tu cuenta tiene una restricción activa.' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
 
     const { data, error } = await supabase.from('comments').insert({
       story_id,

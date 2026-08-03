@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Plus, ScrollText, Sparkles, Search, X } from "lucide-react";
-import { supabase, signInWithGoogle } from "./lib/supabaseClient";
+import { supabase, signInWithGoogle, ADMIN_EMAILS } from "./lib/supabaseClient";
 import AuthButton from "./components/AuthButton";
 import NavBar from "./components/NavBar";
 import StoryCard from "./components/StoryCard";
@@ -11,6 +11,7 @@ import AuthorProfile from "./components/AuthorProfile";
 import BibliotecaPage from "./components/BibliotecaPage";
 import EscribirPage from "./components/EscribirPage";
 import UmbralGate, { pactoYaAceptado } from "./components/UmbralGate";
+import ModeracionPage from "./components/ModeracionPage";
 
 const CATEGORIAS = [
   { value: "todos", label: "Todos" },
@@ -37,6 +38,7 @@ export default function App() {
   const [viewingAuthorId, setViewingAuthorId] = useState(null);
   const [tab, setTab] = useState("archivo"); // archivo | explorar | biblioteca | perfil | escribir
   const [umbralCruzado, setUmbralCruzado] = useState(pactoYaAceptado());
+  const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
 
   // Sesión: se lee al montar y se escucha cualquier cambio (login/logout)
   useEffect(() => {
@@ -235,7 +237,7 @@ export default function App() {
     <div className="min-h-screen w-full" style={{ background: "#17131C" }}>
       {!umbralCruzado && <UmbralGate onEnter={() => setUmbralCruzado(true)} />}
 
-      <NavBar current={tab} onChange={handleChangeTab} user={user} />
+      <NavBar current={tab} onChange={handleChangeTab} user={user} isAdmin={isAdmin} />
 
       <div
         className="min-h-screen w-full"
@@ -484,6 +486,8 @@ export default function App() {
         {tab === "escribir" && user && (
           <EscribirPage user={user} stories={stories} onNewStory={openPublish} onEdit={startEdit} />
         )}
+
+        {tab === "moderacion" && isAdmin && <ModeracionPage />}
         </>
         )}
       </div>

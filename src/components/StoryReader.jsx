@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { X, Trash2, Pencil, UserPlus, UserCheck, Eye } from "lucide-react";
+import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
 import { supabase, ADMIN_EMAILS, signInWithGoogle } from "../lib/supabaseClient";
+import ReportModal from "./ReportModal";
 
 export default function StoryReader({ story, user, onClose, onDeleted, onEdit, onViewAuthor }) {
   const [siguiendo, setSiguiendo] = useState(false);
   const [contadorSeguidores, setContadorSeguidores] = useState(null);
+  const [reportando, setReportando] = useState(false);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -94,6 +96,15 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
             <X size={16} /> Cerrar
           </button>
           <div className="flex items-center gap-4">
+            {user && (
+              <button
+                onClick={() => setReportando(true)}
+                className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#e08a8a] transition-colors text-sm"
+                style={{ fontFamily: "Lora, serif" }}
+              >
+                <Flag size={13} /> Reportar
+              </button>
+            )}
             {canEdit && (
               <button
                 onClick={() => onEdit(story)}
@@ -167,6 +178,10 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
 
         <CommentThread storyId={story.id} storyAuthorId={story.author_id} user={user} />
       </div>
+
+      {reportando && (
+        <ReportModal user={user} historiaId={story.id} onClose={() => setReportando(false)} />
+      )}
     </div>
   );
 }
