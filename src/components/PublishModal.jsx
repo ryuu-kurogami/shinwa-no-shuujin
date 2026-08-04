@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, Feather, ImagePlus, ShieldAlert } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./AgeGate";
 
 const CLOUDINARY_CLOUD_NAME = "ahwle70d";
 const CLOUDINARY_UPLOAD_PRESET = "shinwa_portadas";
@@ -16,6 +17,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const [portadaUrl, setPortadaUrl] = useState(editingStory?.portada_url || "");
   const [esAdulto, setEsAdulto] = useState(editingStory?.es_adulto || false);
   const [declaracion18, setDeclaracion18] = useState(editingStory?.declaracion_18_ok || false);
+  const [mostrarGateAutor, setMostrarGateAutor] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -201,8 +203,15 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
                 type="checkbox"
                 checked={esAdulto}
                 onChange={(e) => {
-                  setEsAdulto(e.target.checked);
-                  if (!e.target.checked) setDeclaracion18(false);
+                  const checked = e.target.checked;
+                  if (checked && !edad18YaConfirmada()) {
+                    // El autor también tiene que declarar su propia mayoría
+                    // de edad, no solo advertir a quien lee (ver 4.2/4.4).
+                    setMostrarGateAutor(true);
+                    return;
+                  }
+                  setEsAdulto(checked);
+                  if (!checked) setDeclaracion18(false);
                 }}
                 className="w-4 h-4 accent-[#7A2E2E]"
               />
@@ -332,6 +341,17 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
           </div>
         </form>
       </div>
+
+      {mostrarGateAutor && (
+        <AgeGate
+          onConfirm={() => {
+            confirmarEdad18();
+            setEsAdulto(true);
+            setMostrarGateAutor(false);
+          }}
+          onDecline={() => setMostrarGateAutor(false)}
+        />
+      )}
     </div>
   );
 }
