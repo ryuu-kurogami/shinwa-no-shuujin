@@ -1,5 +1,5 @@
 import React from "react";
-import { Clock, Bookmark, Heart } from "lucide-react";
+import { Clock, Bookmark, Heart, ShieldAlert } from "lucide-react";
 
 export function StorySeal({ fraseIconica, portadaUrl }) {
   // Con portada: el círculo muestra la imagen completa, sin texto encima.
@@ -96,6 +96,14 @@ export default function StoryCard({ story, onOpen, isSaved, onToggleSave, onView
       <button onClick={() => onOpen(story)} className="contents text-left cursor-pointer">
         <StorySeal fraseIconica={story.frase_iconica || story.span} portadaUrl={story.portada_url} />
         <div className="min-w-0 flex-1">
+          {story.es_adulto && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] tracking-wide text-[#e08a8a] border border-[#7A2E2E] rounded-sm px-1.5 py-0.5 mb-1.5"
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              <ShieldAlert size={10} /> +18
+            </span>
+          )}
           <h3
             className="text-[#EDE6D6] text-xl leading-snug mb-1.5 group-hover:text-[#e8c9a3] transition-colors pr-16"
             style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}

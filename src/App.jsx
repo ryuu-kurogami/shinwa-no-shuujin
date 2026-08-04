@@ -12,6 +12,7 @@ import BibliotecaPage from "./components/BibliotecaPage";
 import EscribirPage from "./components/EscribirPage";
 import UmbralGate, { pactoYaAceptado } from "./components/UmbralGate";
 import ModeracionPage from "./components/ModeracionPage";
+import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./components/AgeGate";
 
 const CATEGORIAS = [
   { value: "todos", label: "Todos" },
@@ -38,7 +39,31 @@ export default function App() {
   const [viewingAuthorId, setViewingAuthorId] = useState(null);
   const [tab, setTab] = useState("archivo"); // archivo | explorar | biblioteca | perfil | escribir
   const [umbralCruzado, setUmbralCruzado] = useState(pactoYaAceptado());
+  const [edad18Confirmada, setEdad18Confirmada] = useState(edad18YaConfirmada());
+  const [historiaPendienteDeEdad, setHistoriaPendienteDeEdad] = useState(null);
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
+
+  // Punto único de apertura de una historia: si es contenido +18 y todavía
+  // no se confirmó la mayoría de edad en este navegador, se intercepta con
+  // el AgeGate (ver Términos, Sección 4.2) en vez de abrir el lector directo.
+  const handleOpenStory = (story) => {
+    if (story?.es_adulto && !edad18Confirmada) {
+      setHistoriaPendienteDeEdad(story);
+      return;
+    }
+    setOpenStory(story);
+  };
+
+  const confirmarYAbrir = () => {
+    confirmarEdad18();
+    setEdad18Confirmada(true);
+    setOpenStory(historiaPendienteDeEdad);
+    setHistoriaPendienteDeEdad(null);
+  };
+
+  const cancelarApertura = () => {
+    setHistoriaPendienteDeEdad(null);
+  };
 
   // Sesión: se lee al montar y se escucha cualquier cambio (login/logout)
   useEffect(() => {
@@ -236,6 +261,7 @@ export default function App() {
   return (
     <div className="min-h-screen w-full" style={{ background: "#17131C" }}>
       {!umbralCruzado && <UmbralGate onEnter={() => setUmbralCruzado(true)} />}
+      {historiaPendienteDeEdad && <AgeGate onConfirm={confirmarYAbrir} onDecline={cancelarApertura} />}
 
       <NavBar current={tab} onChange={handleChangeTab} user={user} isAdmin={isAdmin} />
 
@@ -254,7 +280,7 @@ export default function App() {
             onBack={() => setViewingAuthorId(null)}
             onOpenStory={(story) => {
               setViewingAuthorId(null);
-              setOpenStory(story);
+              handleOpenStory(story);
             }}
           />
         ) : (
@@ -345,7 +371,7 @@ export default function App() {
                     <StoryCard
                       key={s.id}
                       story={s}
-                      onOpen={setOpenStory}
+                      onOpen={handleOpenStory}
                       isSaved={savedIds.has(s.id)}
                       onToggleSave={toggleSave}
                       onViewAuthor={handleViewAuthor}
@@ -445,7 +471,7 @@ export default function App() {
                   <StoryCard
                     key={s.id}
                     story={s}
-                    onOpen={setOpenStory}
+                    onOpen={handleOpenStory}
                     isSaved={savedIds.has(s.id)}
                     onToggleSave={toggleSave}
                     onViewAuthor={handleViewAuthor}
@@ -463,7 +489,7 @@ export default function App() {
           <BibliotecaPage
             stories={stories}
             savedIds={savedIds}
-            onOpen={setOpenStory}
+            onOpen={handleOpenStory}
             onToggleSave={toggleSave}
             likedIds={likedIds}
             likesCountMap={likesCountMap}
@@ -478,7 +504,7 @@ export default function App() {
             onBack={() => setTab("archivo")}
             onEdit={startEdit}
             onDeleted={handleDeleted}
-            onOpen={setOpenStory}
+            onOpen={handleOpenStory}
             onViewAuthor={handleViewAuthor}
           />
         )}

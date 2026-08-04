@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { X, Feather, ImagePlus } from "lucide-react";
+import { X, Feather, ImagePlus, ShieldAlert } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const CLOUDINARY_CLOUD_NAME = "ahwle70d";
@@ -14,6 +14,8 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const [excerpt, setExcerpt] = useState(editingStory?.excerpt || "");
   const [content, setContent] = useState(editingStory?.content || "");
   const [portadaUrl, setPortadaUrl] = useState(editingStory?.portada_url || "");
+  const [esAdulto, setEsAdulto] = useState(editingStory?.es_adulto || false);
+  const [declaracion18, setDeclaracion18] = useState(editingStory?.declaracion_18_ok || false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -72,9 +74,20 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
       setErr("El título y el texto son obligatorios.");
       return;
     }
+    if (esAdulto && !declaracion18) {
+      setErr("Para marcar la historia como contenido +18 tenés que confirmar la declaración del autor (ver Términos, Sección 4.4).");
+      return;
+    }
     setSaving(true);
     setErr("");
     try {
+      // Contenido +18 (ver Términos, Sección 4.5): mientras el Sitio tenga
+      // volumen reducido de usuarios, se revisa manualmente antes de
+      // publicarse — así que "Publicar" no lo saca directo a producción,
+      // lo manda a pendiente_revision. Guardar como borrador nunca dispara
+      // esto: solo aplica al intentar publicar.
+      const estadoFinal = esAdulto && estadoDestino === "publicado" ? "pendiente_revision" : estadoDestino;
+
       const payload = {
         title: title.trim(),
         span: editingStory?.span || "instante suspendido", // legado, ya no se muestra en el sello
@@ -88,7 +101,9 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
         excerpt: excerpt.trim() || content.trim().slice(0, 140) + "...",
         content: content.trim(),
         portada_url: portadaUrl || null,
-        estado: estadoDestino,
+        es_adulto: esAdulto,
+        declaracion_18_ok: esAdulto ? declaracion18 : false,
+        estado: estadoFinal,
       };
 
       // La base de datos (RLS) ya exige que auth.uid() sea el autor para
@@ -180,6 +195,45 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
             </div>
           </div>
 
+          <div className="border border-[#4a3f52] rounded-sm p-3.5">
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={esAdulto}
+                onChange={(e) => {
+                  setEsAdulto(e.target.checked);
+                  if (!e.target.checked) setDeclaracion18(false);
+                }}
+                className="w-4 h-4 accent-[#7A2E2E]"
+              />
+              <span className="flex items-center gap-1.5 text-[#e8c9a3] text-sm" style={{ fontFamily: "Lora, serif" }}>
+                <ShieldAlert size={15} /> Contenido para mayores de edad (+18)
+              </span>
+            </label>
+
+            {esAdulto && (
+              <div className="mt-3 pl-6.5">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={declaracion18}
+                    onChange={(e) => setDeclaracion18(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 shrink-0 accent-[#7A2E2E]"
+                  />
+                  <span className="text-[#b8afc4] text-xs leading-relaxed" style={{ fontFamily: "Lora, serif" }}>
+                    Declaro que esta obra no contiene lo prohibido en la Sección 4.3 de los Términos y
+                    Condiciones (contenido sexual que involucre a menores bajo cualquier justificación,
+                    contenido sexual no consensuado presentado de forma que lo promueva, ni violencia
+                    extrema gratuita fuera de contexto narrativo).
+                  </span>
+                </label>
+                <p className="text-[#7d7389] text-xs mt-2" style={{ fontFamily: "Lora, serif" }}>
+                  Al publicar, esta historia pasará a revisión antes de quedar visible públicamente (Sección 4.5).
+                </p>
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
               Tags / géneros (separados por coma)
@@ -267,7 +321,13 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
               className="flex-1 py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-50 text-[#EDE6D6] font-medium tracking-wide transition-colors"
               style={{ fontFamily: "Fraunces, serif" }}
             >
-              {saving ? "Publicando..." : isEditing ? "Guardar y publicar" : "Publicar crónica"}
+              {saving
+                ? "Guardando..."
+                : esAdulto
+                ? "Enviar a revisión"
+                : isEditing
+                ? "Guardar y publicar"
+                : "Publicar crónica"}
             </button>
           </div>
         </form>
