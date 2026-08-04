@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { ShieldAlert, Trash2, Ban, CheckCircle2, ExternalLink } from "lucide-react";
+import { ShieldAlert, Trash2, Ban, CheckCircle2, ExternalLink, Clock3, Search, UserX, Eye } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const MOTIVO_LABEL = {
@@ -20,8 +20,28 @@ const DURACIONES = [
   { label: "Permanente", horas: null },
 ];
 
+// baneado_hasta permanente se guarda como esta fecha centinela (ver banear())
+const PERMANENTE_ISO = "9999-12-31T00:00:00Z";
+
+function tiempoRestante(baneadoHasta) {
+  if (!baneadoHasta) return null;
+  if (baneadoHasta.startsWith("9999")) return "Permanente";
+  const ms = new Date(baneadoHasta).getTime() - Date.now();
+  if (ms <= 0) return null;
+  const dias = Math.ceil(ms / (1000 * 60 * 60 * 24));
+  if (dias >= 1) return `${dias} día${dias !== 1 ? "s" : ""} restante${dias !== 1 ? "s" : ""}`;
+  const horas = Math.max(1, Math.ceil(ms / (1000 * 60 * 60)));
+  return `${horas} hora${horas !== 1 ? "s" : ""} restante${horas !== 1 ? "s" : ""}`;
+}
+
 export default function ModeracionPage() {
   const [reportes, setReportes] = useState(null);
+  const [infraccionesPorUsuario, setInfraccionesPorUsuario] = useState({});
+  const [enRevision, setEnRevision] = useState(null);
+  const [baneados, setBaneados] = useState(null);
+  const [busqueda, setBusqueda] = useState("");
+  const [resultadosBusqueda, setResultadosBusqueda] = useState(null);
+  const [buscando, setBuscando] = useState(false);
   const [err, setErr] = useState("");
 
   const cargar = useCallback(async () => {
@@ -62,11 +82,61 @@ export default function ModeracionPage() {
 
     enriquecidos.sort((a, b) => (PRIORIDAD[a.motivo] ?? 9) - (PRIORIDAD[b.motivo] ?? 9));
     setReportes(enriquecidos);
+
+    // Reincidencia (infracciones) de cada autor/usuario involucrado, para
+    // mostrarla junto al reporte sin tener que ir a buscarla aparte.
+    const idsInvolucrados = [
+      ...new Set(
+        enriquecidos
+          .map((r) => (r.tipo === "historia" ? r.contenido?.author_id : r.contenido?.user_id))
+          .filter(Boolean)
+      ),
+    ];
+    if (idsInvolucrados.length > 0) {
+      const { data: perfiles } = await supabase
+        .from("profiles")
+        .select("id, infracciones")
+        .in("id", idsInvolucrados);
+      const mapa = {};
+      (perfiles || []).forEach((p) => (mapa[p.id] = p.infracciones || 0));
+      setInfraccionesPorUsuario(mapa);
+    }
+  }, []);
+
+  const cargarEnRevision = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("stories")
+      .select("id, title, author_id, author_name, created_at, es_adulto")
+      .eq("estado", "pendiente_revision")
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      setErr("No se pudo cargar el contenido en revisión.");
+      return;
+    }
+    setEnRevision(data || []);
+  }, []);
+
+  const cargarBaneados = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, username, baneado_hasta, infracciones")
+      .gt("baneado_hasta", new Date().toISOString())
+      .order("baneado_hasta", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      setErr("No se pudo cargar la lista de usuarios baneados.");
+      return;
+    }
+    setBaneados(data || []);
   }, []);
 
   useEffect(() => {
     cargar();
-  }, [cargar]);
+    cargarEnRevision();
+    cargarBaneados();
+  }, [cargar, cargarEnRevision, cargarBaneados]);
 
   const marcarResuelto = async (id) => {
     await supabase.from("reportes").update({ estado: "resuelto" }).eq("id", id);
@@ -89,9 +159,7 @@ export default function ModeracionPage() {
       alert("No se puede banear: el autor es anónimo o no se encontró.");
       return;
     }
-    const baneadoHasta = horas
-      ? new Date(Date.now() + horas * 60 * 60 * 1000).toISOString()
-      : "9999-12-31T00:00:00Z"; // permanente
+    const baneadoHasta = horas ? new Date(Date.now() + horas * 60 * 60 * 1000).toISOString() : PERMANENTE_ISO;
 
     const { data: perfilActual } = await supabase
       .from("profiles")
@@ -108,6 +176,40 @@ export default function ModeracionPage() {
       .eq("id", authorId);
 
     await marcarResuelto(r.id);
+    cargarBaneados();
+  };
+
+  const aprobarEnRevision = async (story) => {
+    await supabase.from("stories").update({ estado: "publicado" }).eq("id", story.id);
+    cargarEnRevision();
+  };
+
+  const rechazarEnRevision = async (story) => {
+    if (!window.confirm(`¿Rechazar "${story.title}"? Vuelve a borrador para que el autor la revise.`)) return;
+    await supabase.from("stories").update({ estado: "borrador" }).eq("id", story.id);
+    cargarEnRevision();
+  };
+
+  const quitarBaneo = async (userId) => {
+    await supabase.from("profiles").update({ baneado_hasta: null }).eq("id", userId);
+    cargarBaneados();
+    if (resultadosBusqueda) buscarUsuario();
+  };
+
+  const buscarUsuario = async () => {
+    const q = busqueda.trim();
+    if (!q) {
+      setResultadosBusqueda(null);
+      return;
+    }
+    setBuscando(true);
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, username, baneado_hasta, infracciones")
+      .ilike("username", `%${q}%`)
+      .limit(10);
+    setResultadosBusqueda(data || []);
+    setBuscando(false);
   };
 
   if (reportes === null) {
@@ -123,93 +225,263 @@ export default function ModeracionPage() {
       <div className="flex items-center gap-3 mb-6">
         <ShieldAlert size={18} className="text-[#7A2E2E]" />
         <h1 className="text-[#EDE6D6] text-2xl" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
-          Moderación — {reportes.length} pendiente{reportes.length !== 1 ? "s" : ""}
+          Moderación
         </h1>
       </div>
 
       {err && <p className="text-[#e08a8a] text-sm mb-4">{err}</p>}
 
+      {/* ---------- Reportes pendientes ---------- */}
+      <div className="flex items-center gap-2 mb-4">
+        <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Reportes pendientes — {reportes.length}
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+
       {reportes.length === 0 ? (
-        <p className="text-[#7d7389] italic" style={{ fontFamily: "Lora, serif" }}>
+        <p className="text-[#7d7389] italic mb-10" style={{ fontFamily: "Lora, serif" }}>
           No hay reportes pendientes.
         </p>
       ) : (
-        <div className="space-y-4">
-          {reportes.map((r) => (
-            <div key={r.id} className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-5">
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <span
-                  className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full ${
-                    r.motivo === "contenido_prohibido"
-                      ? "bg-[#7A2E2E]/30 text-[#e08a8a]"
-                      : "bg-[#4a3f52] text-[#b8afc4]"
-                  }`}
-                >
-                  {MOTIVO_LABEL[r.motivo] || r.motivo}
-                </span>
-                <span className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
-                  {r.tipo === "historia" ? "Historia" : "Comentario"} ·{" "}
-                  {new Date(r.created_at).toLocaleDateString("es-ES")}
-                </span>
-              </div>
+        <div className="space-y-4 mb-10">
+          {reportes.map((r) => {
+            const autorId = r.tipo === "historia" ? r.contenido?.author_id : r.contenido?.user_id;
+            const infracciones = autorId ? infraccionesPorUsuario[autorId] : undefined;
+            return (
+              <div key={r.id} className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-5">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span
+                    className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                      r.motivo === "contenido_prohibido"
+                        ? "bg-[#7A2E2E]/30 text-[#e08a8a]"
+                        : "bg-[#4a3f52] text-[#b8afc4]"
+                    }`}
+                  >
+                    {MOTIVO_LABEL[r.motivo] || r.motivo}
+                  </span>
+                  <span className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
+                    {r.tipo === "historia" ? "Historia" : "Comentario"} ·{" "}
+                    {new Date(r.created_at).toLocaleDateString("es-ES")}
+                  </span>
+                  {infracciones > 0 && (
+                    <span
+                      className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#7A2E2E]/20 text-[#e08a8a]"
+                      title="Cantidad de veces que este usuario ya fue baneado antes"
+                    >
+                      Reincidencia: {infracciones}
+                    </span>
+                  )}
+                </div>
 
-              {r.tipo === "historia" && r.contenido && (
-                <p className="text-[#EDE6D6] text-sm mb-1" style={{ fontFamily: "Lora, serif" }}>
-                  <strong>{r.contenido.title}</strong> — por {r.contenido.author_name}
-                  {r.contenido.estado === "pendiente_revision" && (
-                    <span className="text-[#B08D57] text-xs ml-2">(auto-ocultada por reportes)</span>
+                {r.tipo === "historia" && r.contenido && (
+                  <p className="text-[#EDE6D6] text-sm mb-1" style={{ fontFamily: "Lora, serif" }}>
+                    <strong>{r.contenido.title}</strong> — por {r.contenido.author_name}
+                    {r.contenido.estado === "pendiente_revision" && (
+                      <span className="text-[#B08D57] text-xs ml-2">(auto-ocultada por reportes)</span>
+                    )}
+                  </p>
+                )}
+                {r.tipo === "comentario" && r.contenido && (
+                  <p className="text-[#EDE6D6] text-sm mb-1" style={{ fontFamily: "Lora, serif" }}>
+                    <strong>{r.contenido.commenter_name}:</strong> "{r.contenido.text}"
+                  </p>
+                )}
+                {!r.contenido && (
+                  <p className="text-[#7d7389] text-sm italic mb-1" style={{ fontFamily: "Lora, serif" }}>
+                    El contenido original ya no existe.
+                  </p>
+                )}
+
+                {r.evidencia && (
+                  <p className="text-[#b8afc4] text-xs mb-3" style={{ fontFamily: "Lora, serif" }}>
+                    Evidencia: {r.evidencia}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-3 flex-wrap mt-3">
+                  <button
+                    onClick={() => eliminarContenido(r)}
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10 transition-colors"
+                    style={{ fontFamily: "Lora, serif" }}
+                  >
+                    <Trash2 size={12} /> Eliminar contenido
+                  </button>
+
+                  {DURACIONES.map((d) => (
+                    <button
+                      key={d.label}
+                      onClick={() => banear(r, d.horas)}
+                      className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3] transition-colors"
+                      style={{ fontFamily: "Lora, serif" }}
+                    >
+                      <Ban size={12} /> Banear {d.label}
+                    </button>
+                  ))}
+
+                  <button
+                    onClick={() => marcarResuelto(r.id)}
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors ml-auto"
+                    style={{ fontFamily: "Lora, serif" }}
+                  >
+                    <CheckCircle2 size={12} /> Marcar resuelto
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ---------- Contenido en revisión ---------- */}
+      <div className="flex items-center gap-2 mb-4">
+        <Eye size={13} className="text-[#B08D57]" />
+        <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Contenido en revisión — {enRevision === null ? "…" : enRevision.length}
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+
+      {enRevision === null ? (
+        <p className="text-[#7d7389] mb-10" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
+      ) : enRevision.length === 0 ? (
+        <p className="text-[#7d7389] italic mb-10" style={{ fontFamily: "Lora, serif" }}>
+          No hay contenido esperando revisión.
+        </p>
+      ) : (
+        <div className="space-y-3 mb-10">
+          {enRevision.map((s) => (
+            <div
+              key={s.id}
+              className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-4 flex items-center gap-3 flex-wrap"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-[#EDE6D6] text-sm" style={{ fontFamily: "Lora, serif" }}>
+                  <strong>{s.title}</strong> — por {s.author_name}
+                  {s.es_adulto && (
+                    <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-[#7A2E2E]/30 text-[#e08a8a] ml-2">
+                      +18
+                    </span>
                   )}
                 </p>
-              )}
-              {r.tipo === "comentario" && r.contenido && (
-                <p className="text-[#EDE6D6] text-sm mb-1" style={{ fontFamily: "Lora, serif" }}>
-                  <strong>{r.contenido.commenter_name}:</strong> "{r.contenido.text}"
+                <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
+                  Enviada el {new Date(s.created_at).toLocaleDateString("es-ES")}
                 </p>
-              )}
-              {!r.contenido && (
-                <p className="text-[#7d7389] text-sm italic mb-1" style={{ fontFamily: "Lora, serif" }}>
-                  El contenido original ya no existe.
-                </p>
-              )}
-
-              {r.evidencia && (
-                <p className="text-[#b8afc4] text-xs mb-3" style={{ fontFamily: "Lora, serif" }}>
-                  Evidencia: {r.evidencia}
-                </p>
-              )}
-
-              <div className="flex items-center gap-3 flex-wrap mt-3">
+              </div>
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => eliminarContenido(r)}
+                  onClick={() => aprobarEnRevision(s)}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  <CheckCircle2 size={12} /> Aprobar y publicar
+                </button>
+                <button
+                  onClick={() => rechazarEnRevision(s)}
                   className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10 transition-colors"
                   style={{ fontFamily: "Lora, serif" }}
                 >
-                  <Trash2 size={12} /> Eliminar contenido
-                </button>
-
-                {DURACIONES.map((d) => (
-                  <button
-                    key={d.label}
-                    onClick={() => banear(r, d.horas)}
-                    className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3] transition-colors"
-                    style={{ fontFamily: "Lora, serif" }}
-                  >
-                    <Ban size={12} /> Banear {d.label}
-                  </button>
-                ))}
-
-                <button
-                  onClick={() => marcarResuelto(r.id)}
-                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors ml-auto"
-                  style={{ fontFamily: "Lora, serif" }}
-                >
-                  <CheckCircle2 size={12} /> Marcar resuelto
+                  <Trash2 size={12} /> Rechazar
                 </button>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* ---------- Usuarios baneados ---------- */}
+      <div className="flex items-center gap-2 mb-4">
+        <UserX size={13} className="text-[#B08D57]" />
+        <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Usuarios baneados
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+
+      <div className="relative mb-4">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7d7389]" />
+        <input
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && buscarUsuario()}
+          placeholder="Buscar usuario baneado por nombre de usuario..."
+          className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm pl-9 pr-20 py-2.5 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+          style={{ fontFamily: "Lora, serif" }}
+        />
+        <button
+          onClick={buscarUsuario}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-xs px-2.5 py-1 rounded-sm border border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3] transition-colors"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          {buscando ? "..." : "Buscar"}
+        </button>
+      </div>
+
+      {resultadosBusqueda !== null && (
+        <div className="mb-4">
+          <p className="text-[#7d7389] text-xs mb-2" style={{ fontFamily: "Lora, serif" }}>
+            Resultados de la búsqueda:
+          </p>
+          {resultadosBusqueda.length === 0 ? (
+            <p className="text-[#7d7389] italic text-sm" style={{ fontFamily: "Lora, serif" }}>
+              No se encontró ningún usuario con ese nombre.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {resultadosBusqueda.map((u) => (
+                <FilaUsuarioBaneado key={u.id} usuario={u} onQuitarBaneo={quitarBaneo} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {baneados === null ? (
+        <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
+      ) : baneados.length === 0 ? (
+        <p className="text-[#7d7389] italic" style={{ fontFamily: "Lora, serif" }}>
+          No hay usuarios baneados actualmente.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {baneados.map((u) => (
+            <FilaUsuarioBaneado key={u.id} usuario={u} onQuitarBaneo={quitarBaneo} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilaUsuarioBaneado({ usuario, onQuitarBaneo }) {
+  const restante = tiempoRestante(usuario.baneado_hasta);
+  return (
+    <div className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-3.5 flex items-center gap-3 flex-wrap">
+      <div className="min-w-0 flex-1">
+        <p className="text-[#EDE6D6] text-sm" style={{ fontFamily: "Lora, serif" }}>
+          {usuario.username || "(sin nombre de usuario)"}
+        </p>
+        <div className="flex items-center gap-3 mt-0.5">
+          <span className="flex items-center gap-1 text-[#e8c9a3] text-xs" style={{ fontFamily: "Lora, serif" }}>
+            <Clock3 size={11} /> {restante || "vencido"}
+          </span>
+          {usuario.infracciones > 0 && (
+            <span
+              className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#7A2E2E]/20 text-[#e08a8a]"
+              title="Cantidad de veces que este usuario ya fue baneado"
+            >
+              Reincidencia: {usuario.infracciones}
+            </span>
+          )}
+        </div>
+      </div>
+      <button
+        onClick={() => onQuitarBaneo(usuario.id)}
+        className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors"
+        style={{ fontFamily: "Lora, serif" }}
+      >
+        <CheckCircle2 size={12} /> Quitar baneo
+      </button>
     </div>
   );
 }

@@ -1,10 +1,28 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart, Clock3 } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import { supabase } from "../lib/supabaseClient";
 import EditProfileModal from "./EditProfileModal";
 
 const CATEGORIA_LABEL = { corto: "Corto", novela: "Novela", fanfic: "Fanfic" };
+
+const ESTADO_BADGE = {
+  pendiente_revision: { label: "Pendiente de revisión", className: "bg-[#B08D57]/20 text-[#e8c9a3]" },
+  borrador: { label: "Borrador", className: "bg-[#4a3f52] text-[#b8afc4]" },
+};
+
+// Mismo cálculo que en ModeracionPage — si en algún momento se comparte
+// lógica entre páginas, este es el primer candidato a extraer a un util.
+function tiempoRestante(baneadoHasta) {
+  if (!baneadoHasta) return null;
+  if (baneadoHasta.startsWith("9999")) return "permanente";
+  const ms = new Date(baneadoHasta).getTime() - Date.now();
+  if (ms <= 0) return null;
+  const dias = Math.ceil(ms / (1000 * 60 * 60 * 24));
+  if (dias >= 1) return `${dias} día${dias !== 1 ? "s" : ""}`;
+  const horas = Math.max(1, Math.ceil(ms / (1000 * 60 * 60)));
+  return `${horas} hora${horas !== 1 ? "s" : ""}`;
+}
 
 export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, onOpen, onViewAuthor }) {
   const misHistorias = (stories || []).filter((s) => s.author_id === user.id);
@@ -15,7 +33,7 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
   useEffect(() => {
     supabase
       .from("profiles")
-      .select("username, bio, avatar_url, link_donacion")
+      .select("username, bio, avatar_url, link_donacion, baneado_hasta")
       .eq("id", user.id)
       .maybeSingle()
       .then(({ data }) => setProfile(data));
@@ -106,6 +124,19 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
       )}
       {!profile?.link_donacion && <div className="mb-8" />}
 
+      {tiempoRestante(profile?.baneado_hasta) && (
+        <div className="flex items-center gap-2.5 mb-8 px-4 py-3 rounded-sm border border-[#7A2E2E] bg-[#7A2E2E]/10">
+          <Clock3 size={15} className="text-[#e08a8a] shrink-0" />
+          <p className="text-[#e08a8a] text-sm" style={{ fontFamily: "Lora, serif" }}>
+            Tu cuenta tiene restringida la publicación y los comentarios
+            {tiempoRestante(profile.baneado_hasta) === "permanente"
+              ? " de forma permanente."
+              : ` durante ${tiempoRestante(profile.baneado_hasta)} más.`}{" "}
+            Podés seguir leyendo con normalidad.
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center gap-3 mb-5">
         <UserCircle2 size={16} className="text-[#7C8B63]" />
         <h2 className="text-[#7C8B63] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
@@ -165,7 +196,7 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
                     {s.title}
                   </h3>
                 </button>
-                <div className="flex items-center gap-2 text-xs text-[#7d7389] mb-3" style={{ fontFamily: "Lora, serif" }}>
+                <div className="flex items-center gap-2 text-xs text-[#7d7389] mb-3 flex-wrap" style={{ fontFamily: "Lora, serif" }}>
                   <span className="uppercase tracking-wide text-[#7C8B63]">
                     {CATEGORIA_LABEL[s.categoria] || "Corto"}
                   </span>
@@ -173,6 +204,16 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
                   <span>{s.lecturas ?? 0} lecturas</span>
                   <span>·</span>
                   <span>{new Date(s.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  {ESTADO_BADGE[s.estado] && (
+                    <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full ${ESTADO_BADGE[s.estado].className}`}>
+                      {ESTADO_BADGE[s.estado].label}
+                    </span>
+                  )}
+                  {s.es_adulto && (
+                    <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#7A2E2E]/20 text-[#e08a8a]">
+                      +18
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex gap-4">
