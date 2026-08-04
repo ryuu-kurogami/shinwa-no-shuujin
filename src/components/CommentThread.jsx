@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { MessageCircle, Send, Lock, Trash2, Flag } from "lucide-react";
+import { MessageCircle, Send, Lock, Trash2, Flag, User, VenetianMask } from "lucide-react";
 import { supabase, ADMIN_EMAILS } from "../lib/supabaseClient";
 import ReportModal from "./ReportModal";
 
@@ -7,7 +7,8 @@ const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
 export default function CommentThread({ storyId, storyAuthorId, user }) {
   const [comments, setComments] = useState(null);
-  const [name, setName] = useState("");
+  const [miUsername, setMiUsername] = useState(null);
+  const [modoComentario, setModoComentario] = useState("identificado"); // "identificado" | "anonimo"
   const [text, setText] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [sending, setSending] = useState(false);
@@ -34,9 +35,10 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
     load();
   }, [load]);
 
-  // Si el usuario está logueado, prellenamos "Tu nombre" con su username
-  // (viene de la tabla profiles) — pero el campo sigue siendo editable,
-  // por si quiere comentar con otro nombre o quedarse anónimo.
+  // Traemos el username real de la cuenta logueada — ya no es un campo
+  // editable, es la única identidad posible en el modo "identificado".
+  // Esto es lo que cierra la brecha de suplantación: nadie puede escribir
+  // el nombre de otro usuario en un comentario.
   useEffect(() => {
     if (!user?.id) return;
     supabase
@@ -44,9 +46,7 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
       .select("username")
       .eq("id", user.id)
       .maybeSingle()
-      .then(({ data }) => {
-        if (data?.username) setName((prev) => prev || data.username);
-      });
+      .then(({ data }) => setMiUsername(data?.username || null));
   }, [user?.id]);
 
   // Renderiza el widget de Cloudflare Turnstile (captcha)
@@ -83,14 +83,16 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
     try {
       // El captcha se valida server-side en la Edge Function, y el user_id
       // se toma del JWT de sesión (no de lo que mandemos acá) — no hay
-      // insert directo a la tabla desde el cliente.
+      // insert directo a la tabla desde el cliente. commenter_name ahora
+      // sale de un modo fijo (tu username real o "Anónimo"), nunca de un
+      // input de texto libre.
       const { error } = await supabase.functions.invoke("verify-comment", {
         body: {
           token: captchaToken,
           story_id: storyId,
           text: text.trim(),
           is_private: isPrivate,
-          commenter_name: name.trim() || undefined, // si va vacío, la función decide el default
+          commenter_name: modoComentario === "identificado" ? miUsername : "Anónimo",
         },
       });
       if (error) throw error;
@@ -125,13 +127,32 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
       </div>
 
       <form onSubmit={submit} className="mb-7 space-y-2.5">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Tu nombre (opcional)"
-          className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
-          style={{ fontFamily: "Lora, serif" }}
-        />
+        <div className="flex gap-2" style={{ fontFamily: "Lora, serif" }}>
+          <button
+            type="button"
+            onClick={() => setModoComentario("identificado")}
+            disabled={!miUsername}
+            title={!miUsername ? "Todavía no se cargó tu nombre de usuario" : undefined}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-sm border text-xs transition-colors disabled:opacity-40 ${
+              modoComentario === "identificado"
+                ? "border-[#B08D57] text-[#e8c9a3] bg-[#B08D57]/10"
+                : "border-[#4a3f52] text-[#7d7389] hover:text-[#b8afc4]"
+            }`}
+          >
+            <User size={13} /> Comentar como {miUsername || "..."}
+          </button>
+          <button
+            type="button"
+            onClick={() => setModoComentario("anonimo")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-sm border text-xs transition-colors ${
+              modoComentario === "anonimo"
+                ? "border-[#B08D57] text-[#e8c9a3] bg-[#B08D57]/10"
+                : "border-[#4a3f52] text-[#7d7389] hover:text-[#b8afc4]"
+            }`}
+          >
+            <VenetianMask size={13} /> Comentar de forma anónima
+          </button>
+        </div>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -160,7 +181,7 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
         <div className="flex justify-end">
           <button
             type="submit"
-            disabled={sending || !text.trim()}
+            disabled={sending || !text.trim() || (modoComentario === "identificado" && !miUsername)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-40 transition-colors text-sm text-[#EDE6D6]"
             style={{ fontFamily: "Lora, serif" }}
           >

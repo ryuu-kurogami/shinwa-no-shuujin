@@ -13,6 +13,7 @@ import EscribirPage from "./components/EscribirPage";
 import UmbralGate, { pactoYaAceptado } from "./components/UmbralGate";
 import ModeracionPage from "./components/ModeracionPage";
 import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./components/AgeGate";
+import UsernameGate from "./components/UsernameGate";
 
 const CATEGORIAS = [
   { value: "todos", label: "Todos" },
@@ -41,6 +42,7 @@ export default function App() {
   const [umbralCruzado, setUmbralCruzado] = useState(pactoYaAceptado());
   const [edad18Confirmada, setEdad18Confirmada] = useState(edad18YaConfirmada());
   const [historiaPendienteDeEdad, setHistoriaPendienteDeEdad] = useState(null);
+  const [necesitaUsername, setNecesitaUsername] = useState(false);
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
 
   // Punto único de apertura de una historia: si es contenido +18 y todavía
@@ -76,6 +78,22 @@ export default function App() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // Cualquier cuenta con sesión pero sin username todavía (nueva o vieja)
+  // queda bloqueada por el UsernameGate hasta completarlo — es la base para
+  // que después, en comentarios, no se pueda escribir un nombre libre.
+  useEffect(() => {
+    if (!user) {
+      setNecesitaUsername(false);
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("username")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => setNecesitaUsername(!data?.username));
+  }, [user]);
 
   const loadStories = useCallback(async () => {
     const { data, error } = await supabase.from("stories").select("*").order("created_at", { ascending: false });
@@ -261,6 +279,9 @@ export default function App() {
   return (
     <div className="min-h-screen w-full" style={{ background: "#17131C" }}>
       {!umbralCruzado && <UmbralGate onEnter={() => setUmbralCruzado(true)} />}
+      {umbralCruzado && user && necesitaUsername && (
+        <UsernameGate userId={user.id} onDone={() => setNecesitaUsername(false)} />
+      )}
       {historiaPendienteDeEdad && <AgeGate onConfirm={confirmarYAbrir} onDecline={cancelarApertura} />}
 
       <NavBar current={tab} onChange={handleChangeTab} user={user} isAdmin={isAdmin} />
