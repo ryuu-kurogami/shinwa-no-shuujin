@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Plus, ScrollText, Sparkles, Search, X } from "lucide-react";
+import { ScrollText, Sparkles, Search, X, Heart } from "lucide-react";
 import { supabase, signInWithGoogle, ADMIN_EMAILS } from "./lib/supabaseClient";
 import AuthButton from "./components/AuthButton";
 import NavBar from "./components/NavBar";
@@ -14,6 +14,7 @@ import UmbralGate, { pactoYaAceptado } from "./components/UmbralGate";
 import ModeracionPage from "./components/ModeracionPage";
 import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./components/AgeGate";
 import UsernameGate from "./components/UsernameGate";
+import TransparenciaPage from "./components/TransparenciaPage";
 
 const CATEGORIAS = [
   { value: "todos", label: "Todos" },
@@ -340,11 +341,11 @@ export default function App() {
               </p>
 
               <button
-                onClick={openPublish}
+                onClick={() => setTab("transparencia")}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-sm border border-[#B08D57] text-[#e8c9a3] hover:bg-[#B08D57]/10 transition-colors text-sm tracking-wide"
                 style={{ fontFamily: "Lora, serif" }}
               >
-                <Plus size={16} /> {user ? "Publicar una crónica" : "Iniciá sesión para publicar"}
+                <Heart size={16} /> Sobre el sitio · Transparencia
               </button>
             </header>
 
@@ -535,6 +536,9 @@ export default function App() {
         )}
 
         {tab === "moderacion" && isAdmin && <ModeracionPage />}
+        {tab === "transparencia" && (
+          <TransparenciaPage onBack={() => setTab("archivo")} isAdmin={isAdmin} />
+        )}
         </>
         )}
       </div>

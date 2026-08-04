@@ -1,23 +1,7 @@
 import React, { useState } from "react";
 import { Feather } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-
-// Nadie puede registrarse con estos nombres — evita que alguien se haga
-// pasar por el sitio o por la administración a través del username.
-const RESERVADOS = [
-  "admin",
-  "administrador",
-  "moderador",
-  "moderacion",
-  "shinwanoshuujin",
-  "shinwa",
-  "archaium",
-  "soporte",
-  "anonimo",
-  "anónimo",
-];
-
-const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
+import { validarUsername } from "../utils/forbiddenUsernames";
 
 // Se muestra cuando hay sesión pero profiles.username todavía es null —
 // tanto para cuentas nuevas (Google/Discord/Email) como para cualquier
@@ -31,12 +15,9 @@ export default function UsernameGate({ userId, onDone }) {
     e.preventDefault();
     const limpio = username.trim();
 
-    if (!USERNAME_REGEX.test(limpio)) {
-      setErr("Entre 3 y 20 caracteres: letras, números y guion bajo, sin espacios.");
-      return;
-    }
-    if (RESERVADOS.includes(limpio.toLowerCase())) {
-      setErr("Ese nombre de usuario no está disponible.");
+    const resultado = validarUsername(limpio);
+    if (!resultado.valid) {
+      setErr(resultado.error);
       return;
     }
 
@@ -45,10 +26,12 @@ export default function UsernameGate({ userId, onDone }) {
     try {
       const { error } = await supabase.from("profiles").update({ username: limpio }).eq("id", userId);
       if (error) {
-        // 23505 = choque de UNIQUE (ya sea por el índice exacto o por el
-        // case-insensitive, si ya se agregó en la base).
         if (error.code === "23505") {
           setErr("Ese nombre de usuario ya está en uso. Probá con otro.");
+        } else if (error.message) {
+          // El trigger de la base (reservados, groserías, cooldown) ya
+          // devuelve el mensaje en español listo para mostrar.
+          setErr(error.message);
         } else {
           setErr("No se pudo guardar. Probá de nuevo.");
         }

@@ -81,18 +81,16 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
     setSending(true);
     setErr("");
     try {
-      // El captcha se valida server-side en la Edge Function, y el user_id
-      // se toma del JWT de sesión (no de lo que mandemos acá) — no hay
-      // insert directo a la tabla desde el cliente. commenter_name ahora
-      // sale de un modo fijo (tu username real o "Anónimo"), nunca de un
-      // input de texto libre.
+      // El captcha se valida server-side en la Edge Function, y tanto el
+      // user_id como el nombre a mostrar se resuelven ahí, nunca acá — el
+      // cliente solo informa si el modo es anónimo o no.
       const { error } = await supabase.functions.invoke("verify-comment", {
         body: {
           token: captchaToken,
           story_id: storyId,
           text: text.trim(),
           is_private: isPrivate,
-          commenter_name: modoComentario === "identificado" ? miUsername : "Anónimo",
+          is_anonymous: modoComentario === "anonimo",
         },
       });
       if (error) throw error;
@@ -100,8 +98,18 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
       setIsPrivate(false);
       resetTurnstile();
       load();
-    } catch {
-      setErr("No se pudo enviar el comentario. Probá de nuevo.");
+    } catch (error) {
+      // supabase.functions.invoke no expone el body del error directo —
+      // hay que leerlo del Response crudo para mostrar el motivo real
+      // (rate limit, sin sesión, baneo) en vez de un genérico siempre.
+      let mensaje = "No se pudo enviar el comentario. Probá de nuevo.";
+      try {
+        const body = await error?.context?.json();
+        if (body?.error) mensaje = body.error;
+      } catch {
+        // si no se pudo leer el body, nos quedamos con el mensaje genérico
+      }
+      setErr(mensaje);
       resetTurnstile();
     } finally {
       setSending(false);

@@ -9,6 +9,26 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+// Rate limiting (Términos, Sección 6.3): límites separados por usuario y por
+// IP. El de IP es la defensa contra alguien que se banea y vuelve con otra
+// cuenta desde la misma conexión.
+const COOLDOWN_SEGUNDOS = 15 // no se puede mandar dos comentarios más rápido que esto
+const MAX_POR_USUARIO_POR_HORA = 20
+const MAX_POR_IP_POR_HORA = 30
+
+function jsonResponse(body: unknown, status: number) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+function obtenerIp(req: Request): string {
+  const forwarded = req.headers.get('x-forwarded-for')
+  if (forwarded) return forwarded.split(',')[0].trim()
+  return req.headers.get('cf-connecting-ip') || 'desconocida'
+}
+
 Deno.serve(async (req: Request) => {
   // El navegador manda un preflight OPTIONS antes del POST real — hay que responderlo
   // explícitamente o el POST nunca sale.
@@ -17,20 +37,14 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { token, story_id, text, is_private, commenter_name } = await req.json()
+    const { token, story_id, text, is_private, is_anonymous } = await req.json()
 
     // --- 0. Validaciones básicas de entrada ---
     if (!token || !story_id || !text || typeof text !== 'string' || !text.trim()) {
-      return new Response(JSON.stringify({ error: 'Datos incompletos' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Datos incompletos' }, 400)
     }
     if (text.length > 2000) {
-      return new Response(JSON.stringify({ error: 'Comentario demasiado largo' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Comentario demasiado largo' }, 400)
     }
 
     // --- 1. Validar el captcha con Cloudflare (siteverify) ---
@@ -45,10 +59,7 @@ Deno.serve(async (req: Request) => {
     const verifyResult = await verify.json()
 
     if (!verifyResult.success) {
-      return new Response(JSON.stringify({ error: 'Captcha inválido' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Captcha inválido' }, 400)
     }
 
     // --- 2. Resolver el usuario REAL a partir del JWT, nunca del body ---
@@ -70,10 +81,12 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Si mandaron nombre pero no hay usuario verificado, es un comentario anónimo real
-    const safeCommenterName = verifiedUserId
-      ? (commenter_name || 'Usuario')
-      : 'Lector anónimo'
+    // Comentar requiere cuenta (Términos, Secciones 2.1 y 6.1) — si no hay
+    // JWT válido, no seguimos. Si en algún momento se decide permitir
+    // comentarios sin cuenta, este es el único bloque a sacar.
+    if (!verifiedUserId) {
+      return jsonResponse({ error: 'Necesitás una cuenta para comentar.' }, 401)
+    }
 
     // --- 3. Cliente con service_role (ignora RLS, pero ya validamos todo arriba) ---
     const supabase = createClient(
@@ -82,14 +95,62 @@ Deno.serve(async (req: Request) => {
     )
 
     // --- 3.1 Bloquear si el usuario tiene un baneo vigente ---
-    if (verifiedUserId) {
-      const { data: isBanned } = await supabase.rpc('is_baneado', { p_user_id: verifiedUserId })
-      if (isBanned) {
-        return new Response(JSON.stringify({ error: 'Tu cuenta tiene una restricción activa.' }), {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
+    const { data: isBanned } = await supabase.rpc('is_baneado', { p_user_id: verifiedUserId })
+    if (isBanned) {
+      return jsonResponse({ error: 'Tu cuenta tiene una restricción activa.' }, 403)
+    }
+
+    // --- 3.2 Rate limiting: cooldown + tope por hora (usuario e IP) ---
+    const ip = obtenerIp(req)
+    const desdeCooldown = new Date(Date.now() - COOLDOWN_SEGUNDOS * 1000).toISOString()
+    const desdeHora = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+
+    const { data: ultimoComentario } = await supabase
+      .from('comments')
+      .select('created_at')
+      .eq('user_id', verifiedUserId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (ultimoComentario && ultimoComentario.created_at > desdeCooldown) {
+      return jsonResponse({ error: 'Estás comentando muy rápido. Esperá unos segundos.' }, 429)
+    }
+
+    const { count: countUsuario } = await supabase
+      .from('comments')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', verifiedUserId)
+      .gt('created_at', desdeHora)
+
+    if ((countUsuario ?? 0) >= MAX_POR_USUARIO_POR_HORA) {
+      return jsonResponse({ error: 'Alcanzaste el límite de comentarios por hora.' }, 429)
+    }
+
+    if (ip !== 'desconocida') {
+      const { count: countIp } = await supabase
+        .from('comments')
+        .select('id', { count: 'exact', head: true })
+        .eq('ip_address', ip)
+        .gt('created_at', desdeHora)
+
+      if ((countIp ?? 0) >= MAX_POR_IP_POR_HORA) {
+        return jsonResponse({ error: 'Alcanzaste el límite de comentarios por hora.' }, 429)
       }
+    }
+
+    // --- 4. Nombre a mostrar: SIEMPRE resuelto server-side, nunca del body ---
+    // El cliente solo puede pedir "anónimo" o "identificado" — jamás mandar
+    // un texto. Así no hay forma de firmar un comentario con el nombre de
+    // otro usuario, ni siquiera llamando a esta función directo.
+    let safeCommenterName = 'Anónimo'
+    if (!is_anonymous) {
+      const { data: perfil } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', verifiedUserId)
+        .maybeSingle()
+      safeCommenterName = perfil?.username || 'Usuario'
     }
 
     const { data, error } = await supabase.from('comments').insert({
@@ -98,23 +159,15 @@ Deno.serve(async (req: Request) => {
       is_private: !!is_private,
       commenter_name: safeCommenterName,
       user_id: verifiedUserId, // NUNCA el user_id que venga del body
+      ip_address: ip !== 'desconocida' ? ip : null,
     })
 
     if (error) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: error.message }, 400)
     }
 
-    return new Response(JSON.stringify({ data }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ data }, 200)
   } catch (_err) {
-    return new Response(JSON.stringify({ error: 'Error interno' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ error: 'Error interno' }, 500)
   }
 })
