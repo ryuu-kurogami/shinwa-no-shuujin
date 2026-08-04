@@ -15,6 +15,7 @@ import ModeracionPage from "./components/ModeracionPage";
 import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./components/AgeGate";
 import UsernameGate from "./components/UsernameGate";
 import TransparenciaPage from "./components/TransparenciaPage";
+import DeletionPendingGate from "./components/DeletionPendingGate";
 
 const CATEGORIAS = [
   { value: "todos", label: "Todos" },
@@ -44,6 +45,7 @@ export default function App() {
   const [edad18Confirmada, setEdad18Confirmada] = useState(edad18YaConfirmada());
   const [historiaPendienteDeEdad, setHistoriaPendienteDeEdad] = useState(null);
   const [necesitaUsername, setNecesitaUsername] = useState(false);
+  const [eliminarEn, setEliminarEn] = useState(null);
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
 
   // Punto único de apertura de una historia: si es contenido +18 y todavía
@@ -83,17 +85,23 @@ export default function App() {
   // Cualquier cuenta con sesión pero sin username todavía (nueva o vieja)
   // queda bloqueada por el UsernameGate hasta completarlo — es la base para
   // que después, en comentarios, no se pueda escribir un nombre libre.
+  // Aprovechamos la misma consulta para saber si la cuenta está en período
+  // de gracia de borrado (eliminar_en).
   useEffect(() => {
     if (!user) {
       setNecesitaUsername(false);
+      setEliminarEn(null);
       return;
     }
     supabase
       .from("profiles")
-      .select("username")
+      .select("username, eliminar_en")
       .eq("id", user.id)
       .maybeSingle()
-      .then(({ data }) => setNecesitaUsername(!data?.username));
+      .then(({ data }) => {
+        setNecesitaUsername(!data?.username);
+        setEliminarEn(data?.eliminar_en || null);
+      });
   }, [user]);
 
   const loadStories = useCallback(async () => {
@@ -280,7 +288,10 @@ export default function App() {
   return (
     <div className="min-h-screen w-full" style={{ background: "#17131C" }}>
       {!umbralCruzado && <UmbralGate onEnter={() => setUmbralCruzado(true)} />}
-      {umbralCruzado && user && necesitaUsername && (
+      {umbralCruzado && user && eliminarEn && new Date(eliminarEn) > new Date() && (
+        <DeletionPendingGate userId={user.id} eliminarEn={eliminarEn} onCancelado={() => setEliminarEn(null)} />
+      )}
+      {umbralCruzado && user && !eliminarEn && necesitaUsername && (
         <UsernameGate userId={user.id} onDone={() => setNecesitaUsername(false)} />
       )}
       {historiaPendienteDeEdad && <AgeGate onConfirm={confirmarYAbrir} onDecline={cancelarApertura} />}
@@ -528,6 +539,7 @@ export default function App() {
             onDeleted={handleDeleted}
             onOpen={handleOpenStory}
             onViewAuthor={handleViewAuthor}
+            onDeletionRequested={setEliminarEn}
           />
         )}
 

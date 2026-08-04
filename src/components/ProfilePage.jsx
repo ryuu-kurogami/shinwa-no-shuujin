@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart, Clock3 } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart, Clock3, UserX } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import { supabase } from "../lib/supabaseClient";
 import EditProfileModal from "./EditProfileModal";
@@ -24,11 +24,12 @@ function tiempoRestante(baneadoHasta) {
   return `${horas} hora${horas !== 1 ? "s" : ""}`;
 }
 
-export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, onOpen, onViewAuthor }) {
+export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, onOpen, onViewAuthor, onDeletionRequested }) {
   const misHistorias = (stories || []).filter((s) => s.author_id === user.id);
   const [siguiendo, setSiguiendo] = useState([]);
   const [profile, setProfile] = useState(null);
   const [editandoPerfil, setEditandoPerfil] = useState(false);
+  const [solicitandoBorrado, setSolicitandoBorrado] = useState(false);
 
   useEffect(() => {
     supabase
@@ -58,6 +59,18 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
     if (!window.confirm(`¿Borrar "${story.title}"? No se puede deshacer.`)) return;
     await supabase.from("stories").delete().eq("id", story.id);
     onDeleted(story.id);
+  };
+
+  const solicitarBorradoCuenta = async () => {
+    const confirmado = window.confirm(
+      "¿Pedir el borrado de tu cuenta? Tenés 60 días para arrepentirte y recuperarla iniciando sesión de nuevo. Pasado ese plazo, tus historias y tus datos personales se borran de forma definitiva y no se puede deshacer."
+    );
+    if (!confirmado) return;
+    setSolicitandoBorrado(true);
+    const eliminarEn = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+    const { error } = await supabase.from("profiles").update({ eliminar_en: eliminarEn }).eq("id", user.id);
+    setSolicitandoBorrado(false);
+    if (!error) onDeletionRequested(eliminarEn);
   };
 
   return (
@@ -246,6 +259,17 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
           onSaved={(nuevoProfile) => setProfile(nuevoProfile)}
         />
       )}
+
+      <div className="mt-14 pt-6 border-t border-[#4a3f52]">
+        <button
+          onClick={solicitarBorradoCuenta}
+          disabled={solicitandoBorrado}
+          className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#e08a8a] transition-colors text-xs disabled:opacity-40"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          <UserX size={12} /> {solicitandoBorrado ? "..." : "Borrar mi cuenta"}
+        </button>
+      </div>
     </div>
   );
 }
