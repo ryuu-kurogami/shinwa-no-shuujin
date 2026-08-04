@@ -1,3 +1,6 @@
+
+
+
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -29,6 +32,13 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
 
 
 CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "unaccent" WITH SCHEMA "public";
 
 
 
@@ -74,6 +84,31 @@ CREATE TYPE "public"."motivo_reporte_enum" AS ENUM (
 ALTER TYPE "public"."motivo_reporte_enum" OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."auto_ocultar_historia_reportada"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  conteo INT;
+BEGIN
+  IF NEW.historia_id IS NOT NULL THEN
+    SELECT COUNT(*) INTO conteo
+    FROM public.reportes
+    WHERE historia_id = NEW.historia_id AND estado = 'pendiente';
+
+    IF conteo >= 3 THEN
+      UPDATE public.stories
+      SET estado = 'pendiente_revision'
+      WHERE id = NEW.historia_id AND estado = 'publicado';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."auto_ocultar_historia_reportada"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -89,14 +124,41 @@ $$;
 ALTER FUNCTION "public"."handle_new_user"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."increment_lecturas"("p_story_id" "uuid") RETURNS "void"
+    LANGUAGE "sql" SECURITY DEFINER
+    AS $$
+  UPDATE public.stories
+  SET lecturas = lecturas + 1
+  WHERE id = p_story_id AND estado = 'publicado';
+$$;
+
+
+ALTER FUNCTION "public"."increment_lecturas"("p_story_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     AS $$
-  SELECT COALESCE(auth.jwt() ->> 'email', '') IN ('shinwanoshuujin@gmail.com')
+  SELECT
+    auth.uid() IN (SELECT id FROM public.admin_users)
+    OR COALESCE(auth.jwt() ->> 'email', '') = 'shinwanoshuujin@gmail.com'
 $$;
 
 
 ALTER FUNCTION "public"."is_admin"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_baneado"("p_user_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    AS $$
+  SELECT COALESCE(
+    (SELECT baneado_hasta > now() FROM public.profiles WHERE id = p_user_id),
+    false
+  )
+$$;
+
+
+ALTER FUNCTION "public"."is_baneado"("p_user_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."rls_auto_enable"() RETURNS "event_trigger"
@@ -130,9 +192,76 @@ $$;
 
 ALTER FUNCTION "public"."rls_auto_enable"() OWNER TO "postgres";
 
+
+CREATE OR REPLACE FUNCTION "public"."validar_username_reservado"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $_$
+declare
+  normalizado text;
+  palabra text;
+  cambio boolean;
+begin
+  cambio := TG_OP = 'INSERT' or NEW.username is distinct from OLD.username;
+
+  -- Si el username no cambió, no hay nada que validar de nuevo — evita
+  -- romper ediciones de perfil (bio, avatar, etc.) que reenvían el mismo
+  -- username sin querer cambiarlo.
+  if not cambio then
+    return new;
+  end if;
+
+  normalizado := regexp_replace(
+    translate(lower(unaccent(new.username)), '013457@$', 'oieastas'),
+    '[^a-z]', '', 'g'
+  );
+
+  if normalizado = any (array['admin','administrador','moderador','moderacion','shinwanoshuujin','shinwa','archaium','soporte','anonimo'])
+     and not exists (select 1 from public.admin_users where id = new.id) then
+    raise exception 'Ese nombre de usuario no está disponible.';
+  end if;
+
+  foreach palabra in array array['puta','pendejo','verga','mierda','pelotudo','forro','cabron','concha','pija'] loop
+    if normalizado like '%' || palabra || '%' then
+      raise exception 'Ese nombre de usuario contiene lenguaje no permitido.';
+    end if;
+  end loop;
+
+  if TG_OP = 'UPDATE' and OLD.username is not null then
+    if OLD.username_changed_at is not null and now() - OLD.username_changed_at < interval '30 days' then
+      raise exception 'Solo podés cambiar tu nombre de usuario una vez cada 30 días.';
+    end if;
+  end if;
+
+  NEW.username_changed_at := now();
+  return new;
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."validar_username_reservado"() OWNER TO "postgres";
+
 SET default_tablespace = '';
 
 SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."admin_users" (
+    "id" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."admin_users" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."anuncios" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "texto" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."anuncios" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."comments" (
@@ -142,7 +271,8 @@ CREATE TABLE IF NOT EXISTS "public"."comments" (
     "text" "text" NOT NULL,
     "is_private" boolean DEFAULT false NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "user_id" "uuid"
+    "user_id" "uuid",
+    "ip_address" "text"
 );
 
 
@@ -187,7 +317,10 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "bio" "text",
     "avatar_url" "text",
     "link_donacion" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "baneado_hasta" timestamp with time zone,
+    "infracciones" integer DEFAULT 0 NOT NULL,
+    "username_changed_at" timestamp with time zone
 );
 
 
@@ -236,11 +369,22 @@ CREATE TABLE IF NOT EXISTS "public"."stories" (
     "declaracion_18_ok" boolean DEFAULT false NOT NULL,
     "tags" "text"[] DEFAULT '{}'::"text"[],
     "estado" "public"."estado_historia_enum" DEFAULT 'publicado'::"public"."estado_historia_enum" NOT NULL,
-    "lecturas" integer DEFAULT 0 NOT NULL
+    "lecturas" integer DEFAULT 0 NOT NULL,
+    CONSTRAINT "check_declaracion_18" CHECK (((NOT "es_adulto") OR ("declaracion_18_ok" = true)))
 );
 
 
 ALTER TABLE "public"."stories" OWNER TO "postgres";
+
+
+ALTER TABLE ONLY "public"."admin_users"
+    ADD CONSTRAINT "admin_users_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."anuncios"
+    ADD CONSTRAINT "anuncios_pkey" PRIMARY KEY ("id");
+
 
 
 ALTER TABLE ONLY "public"."comments"
@@ -293,6 +437,23 @@ CREATE INDEX "idx_comments_story_id" ON "public"."comments" USING "btree" ("stor
 
 
 CREATE INDEX "idx_stories_created_at" ON "public"."stories" USING "btree" ("created_at" DESC);
+
+
+
+CREATE UNIQUE INDEX "profiles_username_lower_idx" ON "public"."profiles" USING "btree" ("lower"("username"));
+
+
+
+CREATE OR REPLACE TRIGGER "trg_auto_ocultar_historia" AFTER INSERT ON "public"."reportes" FOR EACH ROW EXECUTE FUNCTION "public"."auto_ocultar_historia_reportada"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_validar_username_reservado" BEFORE INSERT OR UPDATE OF "username" ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."validar_username_reservado"();
+
+
+
+ALTER TABLE ONLY "public"."admin_users"
+    ADD CONSTRAINT "admin_users_id_fkey" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -361,6 +522,14 @@ ALTER TABLE ONLY "public"."stories"
 
 
 
+CREATE POLICY "Admin edita cualquier perfil" ON "public"."profiles" FOR UPDATE TO "authenticated" USING ("public"."is_admin"());
+
+
+
+CREATE POLICY "Admin gestiona admin_users" ON "public"."admin_users" TO "authenticated" USING ("public"."is_admin"());
+
+
+
 CREATE POLICY "Admin gestiona fondos" ON "public"."fondos_sitio" TO "authenticated" USING ("public"."is_admin"());
 
 
@@ -379,11 +548,15 @@ CREATE POLICY "Borrar historia propia o admin" ON "public"."stories" FOR DELETE 
 
 
 
-CREATE POLICY "Crear historia propia" ON "public"."stories" FOR INSERT TO "authenticated" WITH CHECK ((("auth"."uid"() = "author_id") AND (("es_adulto" = false) OR ("declaracion_18_ok" = true))));
+CREATE POLICY "Crear historia propia" ON "public"."stories" FOR INSERT TO "authenticated" WITH CHECK ((("auth"."uid"() = "author_id") AND (NOT "public"."is_baneado"("auth"."uid"()))));
 
 
 
 CREATE POLICY "Crear reporte" ON "public"."reportes" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "reportado_por"));
+
+
+
+CREATE POLICY "Cualquiera puede leer anuncios" ON "public"."anuncios" FOR SELECT USING (true);
 
 
 
@@ -431,6 +604,20 @@ CREATE POLICY "Lectura pública de perfiles" ON "public"."profiles" FOR SELECT U
 
 CREATE POLICY "Lectura pública de seguidores" ON "public"."seguidores" FOR SELECT USING (true);
 
+
+
+CREATE POLICY "Solo admin borra anuncios" ON "public"."anuncios" FOR DELETE USING ("public"."is_admin"());
+
+
+
+CREATE POLICY "Solo admin publica anuncios" ON "public"."anuncios" FOR INSERT WITH CHECK ("public"."is_admin"());
+
+
+
+ALTER TABLE "public"."admin_users" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."anuncios" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."comments" ENABLE ROW LEVEL SECURITY;
@@ -616,6 +803,36 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."increment_lecturas"("p_story_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."increment_lecturas"("p_story_id" "uuid") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."unaccent"("text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."unaccent"("text") TO "anon";
+GRANT ALL ON FUNCTION "public"."unaccent"("text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."unaccent"("text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."unaccent"("regdictionary", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."unaccent"("regdictionary", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."unaccent"("regdictionary", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."unaccent"("regdictionary", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."unaccent_init"("internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."unaccent_init"("internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."unaccent_init"("internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."unaccent_init"("internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."unaccent_lexize"("internal", "internal", "internal", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."unaccent_lexize"("internal", "internal", "internal", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."unaccent_lexize"("internal", "internal", "internal", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."unaccent_lexize"("internal", "internal", "internal", "internal") TO "service_role";
 
 
 
@@ -628,6 +845,21 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+
+
+
+
+
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."admin_users" TO "anon";
+GRANT ALL ON TABLE "public"."admin_users" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."admin_users" TO "service_role";
+
+
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."anuncios" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."anuncios" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."anuncios" TO "service_role";
 
 
 
@@ -738,14 +970,3 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES
 
 
 
-
--- ============================================================
--- Trigger de auth.users, agregado a mano: "db dump --linked" no incluye
--- el esquema auth por default, así que este trigger queda fuera del dump
--- automático aunque la función handle_new_user() sí se exporta. Sin esto,
--- los perfiles nuevos no se crean solos al registrarse.
--- ============================================================
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
