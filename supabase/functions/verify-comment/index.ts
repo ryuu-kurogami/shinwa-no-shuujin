@@ -94,41 +94,15 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-   // --- 3.05 Resolver el capítulo Y la historia padre ---
-const { data: capitulo, error: capituloErr } = await supabase
+   // --- 3.05 Validar capítulo existente y publicado ---
+const { data: capitulo } = await supabase
   .from('capitulos')
-  .select(`
-    id, 
-    story_id, 
-    estado,
-    stories:story_id (
-      id,
-      estado
-    )
-  `)
+  .select('story_id, estado')
   .eq('id', capitulo_id)
   .maybeSingle()
 
-if (capituloErr) {
-  console.error("Error consultando capítulo/historia:", capituloErr)
-}
-
-if (!capitulo) {
-  return jsonResponse({ error: 'El capítulo no existe.' }, 400)
-}
-
-const historia = Array.isArray(capitulo.stories) ? capitulo.stories[0] : capitulo.stories
-
-// Estados que PERMITEN lecturas y comentarios públicos:
-const ESTADOS_PERMITIDOS = ['publicado', 'pausado', 'finalizado']
-
-const capituloValido = ESTADOS_PERMITIDOS.includes(String(capitulo.estado).toLowerCase())
-const historiaValida = historia && ESTADOS_PERMITIDOS.includes(String(historia.estado).toLowerCase())
-
-if (!capituloValido || !historiaValida) {
-  return jsonResponse({ 
-    error: 'Ese capítulo no está disponible para comentar.' 
-  }, 400)
+if (!capitulo || capitulo.estado !== 'publicado') {
+  return jsonResponse({ error: 'Ese capítulo no está disponible para comentar.' }, 400)
 }
 
 const story_id = capitulo.story_id
