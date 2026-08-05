@@ -95,11 +95,20 @@ Deno.serve(async (req: Request) => {
     )
 
    // --- 3.05 Validar capítulo existente y publicado ---
-const { data: capitulo } = await supabase
+const { data: capitulo, error: errCapitulo } = await supabase
   .from('capitulos')
   .select('story_id, estado')
   .eq('id', capitulo_id)
   .maybeSingle()
+
+if (errCapitulo) {
+  // Esto NO es "el capítulo no existe" — es un error real de la consulta
+  // (permisos, conexión, etc.). Antes quedaba invisible porque no se
+  // revisaba este campo. Se loguea acá para verlo en los logs de la función
+  // en vez de que se disfrace de "capítulo no disponible".
+  console.error('Error consultando capitulos:', errCapitulo.message)
+  return jsonResponse({ error: 'Error interno al validar el capítulo.' }, 500)
+}
 
 if (!capitulo || capitulo.estado !== 'publicado') {
   return jsonResponse({ error: 'Ese capítulo no está disponible para comentar.' }, 400)
@@ -107,7 +116,11 @@ if (!capitulo || capitulo.estado !== 'publicado') {
 
 const story_id = capitulo.story_id
     // --- 3.1 Bloquear si el usuario tiene un baneo vigente ---
-    const { data: isBanned } = await supabase.rpc('is_baneado', { p_user_id: verifiedUserId })
+    const { data: isBanned, error: errBaneo } = await supabase.rpc('is_baneado', { p_user_id: verifiedUserId })
+    if (errBaneo) {
+      console.error('Error consultando is_baneado:', errBaneo.message)
+      return jsonResponse({ error: 'Error interno al validar la cuenta.' }, 500)
+    }
     if (isBanned) {
       return jsonResponse({ error: 'Tu cuenta tiene una restricción activa.' }, 403)
     }
