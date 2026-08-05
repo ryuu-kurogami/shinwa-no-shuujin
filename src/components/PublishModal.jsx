@@ -6,14 +6,28 @@ import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./AgeGate";
 const CLOUDINARY_CLOUD_NAME = "ahwle70d";
 const CLOUDINARY_UPLOAD_PRESET = "shinwa_portadas";
 
+const ESTADOS_PUBLICACION = [
+  { value: "en_emision", label: "En emisión" },
+  { value: "en_pausa", label: "En pausa" },
+  { value: "finalizado", label: "Finalizado" },
+];
+
+// Este modal ahora cubre tres casos distintos:
+// 1. Historia nueva → crea la fila en `stories` y su capítulo 1 juntos.
+// 2. Editar una historia cuyo capítulo 1 sigue en borrador ("continuar
+//    escribiendo") → edita metadatos y el texto del capítulo 1 a la vez.
+// 3. Editar una historia cuyo capítulo 1 ya está publicado/en revisión →
+//    solo metadatos, el texto de los capítulos se edita desde
+//    PublicarCapituloModal (agregar capítulos nuevos vive ahí también).
 export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const isEditing = Boolean(editingStory);
   const [title, setTitle] = useState(editingStory?.title || "");
   const [fraseIconica, setFraseIconica] = useState(editingStory?.frase_iconica || "");
   const [categoria, setCategoria] = useState(editingStory?.categoria || "corto");
+  const [estadoPublicacion, setEstadoPublicacion] = useState(editingStory?.estado_publicacion || "en_emision");
   const [tagsInput, setTagsInput] = useState((editingStory?.tags || []).join(", "));
   const [excerpt, setExcerpt] = useState(editingStory?.excerpt || "");
-  const [content, setContent] = useState(editingStory?.content || "");
+  const [content, setContent] = useState("");
   const [portadaUrl, setPortadaUrl] = useState(editingStory?.portada_url || "");
   const [esAdulto, setEsAdulto] = useState(editingStory?.es_adulto || false);
   const [declaracion18, setDeclaracion18] = useState(editingStory?.declaracion_18_ok || false);
@@ -21,7 +35,31 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
+  const [capituloUno, setCapituloUno] = useState(null);
+  const [cargandoCapitulo, setCargandoCapitulo] = useState(isEditing);
+
   const widgetRef = useRef(null);
+
+  // Al editar, necesitamos saber si el capítulo 1 todavía está en borrador
+  // (en cuyo caso su texto se edita acá mismo) o ya está publicado/en
+  // revisión (en cuyo caso este modal es solo metadatos).
+  useEffect(() => {
+    if (!editingStory) return;
+    supabase
+      .from("capitulos")
+      .select("id, content, estado")
+      .eq("story_id", editingStory.id)
+      .eq("numero", 1)
+      .maybeSingle()
+      .then(({ data }) => {
+        setCapituloUno(data);
+        if (data?.estado === "borrador") setContent(data.content || "");
+        setCargandoCapitulo(false);
+      });
+  }, [editingStory]);
+
+  const esBorradorSinTerminar = isEditing && capituloUno?.estado === "borrador";
+  const mostrarEditorDeTexto = !isEditing || esBorradorSinTerminar;
 
   // Carga el script del Upload Widget de Cloudinary una sola vez
   useEffect(() => {
@@ -72,8 +110,12 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
 
   const submit = async (e, estadoDestino) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim()) {
-      setErr("El título y el texto son obligatorios.");
+    if (!title.trim()) {
+      setErr("El título es obligatorio.");
+      return;
+    }
+    if (mostrarEditorDeTexto && !content.trim()) {
+      setErr("El texto del capítulo 1 es obligatorio.");
       return;
     }
     if (esAdulto && !declaracion18) {
@@ -83,53 +125,102 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
     setSaving(true);
     setErr("");
     try {
-      // Contenido +18 (ver Términos, Sección 4.5): mientras el Sitio tenga
-      // volumen reducido de usuarios, se revisa manualmente antes de
-      // publicarse — así que "Publicar" no lo saca directo a producción,
-      // lo manda a pendiente_revision. Guardar como borrador nunca dispara
-      // esto: solo aplica al intentar publicar.
-      const estadoFinal = esAdulto && estadoDestino === "publicado" ? "pendiente_revision" : estadoDestino;
-
-      const payload = {
+      const metadatos = {
         title: title.trim(),
         span: editingStory?.span || "instante suspendido", // legado, ya no se muestra en el sello
         frase_iconica: fraseIconica.trim().slice(0, 60) || "Instante suspendido",
         categoria,
+        estado_publicacion: estadoPublicacion,
         tags: tagsInput
           .split(",")
           .map((t) => t.trim().toLowerCase())
           .filter(Boolean)
           .slice(0, 10), // límite razonable, evita spam de tags
-        excerpt: excerpt.trim() || content.trim().slice(0, 140) + "...",
-        content: content.trim(),
+        excerpt:
+          excerpt.trim() ||
+          (mostrarEditorDeTexto ? content.trim().slice(0, 140) + "..." : editingStory?.excerpt || ""),
         portada_url: portadaUrl || null,
         es_adulto: esAdulto,
         declaracion_18_ok: esAdulto ? declaracion18 : false,
-        estado: estadoFinal,
       };
 
-      // La base de datos (RLS) ya exige que auth.uid() sea el autor para
-      // poder editar o borrar — esto es la UI, la seguridad real está en
-      // supabase-schema.sql, así que aunque alguien manipule el frontend
-      // no puede editar una historia ajena.
-      const query = isEditing
-        ? supabase.from("stories").update(payload).eq("id", editingStory.id)
-        : supabase.from("stories").insert({
-            ...payload,
+      if (!isEditing) {
+        // Contenido +18 (ver Términos, Sección 4.5): mientras el Sitio tenga
+        // volumen reducido de usuarios, se revisa manualmente antes de
+        // publicarse — "Publicar" no lo saca directo a producción.
+        const estadoFinal = esAdulto && estadoDestino === "publicado" ? "pendiente_revision" : estadoDestino;
+
+        const { data: nuevaHistoria, error: errHistoria } = await supabase
+          .from("stories")
+          .insert({
+            ...metadatos,
             author_id: user.id,
             author_name: user.user_metadata?.full_name || user.email,
-          });
+            estado: estadoFinal,
+          })
+          .select()
+          .single();
+        if (errHistoria) throw errHistoria;
 
-      const { data, error } = await query.select().single();
-      if (error) throw error;
-      onSaved(data);
-      onClose();
+        const { error: errCapitulo } = await supabase
+          .from("capitulos")
+          .insert({ story_id: nuevaHistoria.id, numero: 1, content: content.trim(), estado: estadoFinal });
+        if (errCapitulo) {
+          // No dejamos una historia fantasma sin ningún capítulo.
+          await supabase.from("stories").delete().eq("id", nuevaHistoria.id);
+          throw errCapitulo;
+        }
+
+        onSaved(nuevaHistoria);
+        onClose();
+      } else if (esBorradorSinTerminar) {
+        const estadoFinal = esAdulto && estadoDestino === "publicado" ? "pendiente_revision" : estadoDestino;
+
+        const { data: historiaActualizada, error: errHistoria } = await supabase
+          .from("stories")
+          .update({ ...metadatos, estado: estadoFinal })
+          .eq("id", editingStory.id)
+          .select()
+          .single();
+        if (errHistoria) throw errHistoria;
+
+        const { error: errCapitulo } = await supabase
+          .from("capitulos")
+          .update({ content: content.trim(), estado: estadoFinal })
+          .eq("id", capituloUno.id);
+        if (errCapitulo) throw errCapitulo;
+
+        onSaved(historiaActualizada);
+        onClose();
+      } else {
+        // Solo metadatos — el texto de los capítulos ya publicados se edita
+        // aparte, desde PublicarCapituloModal.
+        const { data: historiaActualizada, error } = await supabase
+          .from("stories")
+          .update(metadatos)
+          .eq("id", editingStory.id)
+          .select()
+          .single();
+        if (error) throw error;
+        onSaved(historiaActualizada);
+        onClose();
+      }
     } catch {
       setErr(isEditing ? "No se pudo guardar el cambio. Probá de nuevo." : "No se pudo publicar. Probá de nuevo.");
     } finally {
       setSaving(false);
     }
   };
+
+  if (isEditing && cargandoCapitulo) {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm flex items-center justify-center">
+        <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>
+          Cargando...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm overflow-y-auto">
@@ -143,7 +234,8 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
         </button>
 
         <h2 className="text-[#EDE6D6] text-2xl mb-6 flex items-center gap-2" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
-          <Feather size={22} className="text-[#7C8B63]" /> {isEditing ? "Editar crónica" : "Nueva crónica"}
+          <Feather size={22} className="text-[#7C8B63]" />{" "}
+          {!isEditing ? "Nueva crónica" : esBorradorSinTerminar ? "Continuar escribiendo" : "Editar datos de la crónica"}
         </h2>
 
         <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
@@ -197,6 +289,29 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
             </div>
           </div>
 
+          <div>
+            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
+              Estado de emisión
+            </label>
+            <div className="flex gap-2">
+              {ESTADOS_PUBLICACION.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEstadoPublicacion(opt.value)}
+                  className={`px-3 py-1.5 rounded-sm border text-sm transition-colors ${
+                    estadoPublicacion === opt.value
+                      ? "border-[#7C8B63] text-[#c3d1a8] bg-[#7C8B63]/10"
+                      : "border-[#4a3f52] text-[#7d7389] hover:text-[#b8afc4]"
+                  }`}
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="border border-[#4a3f52] rounded-sm p-3.5">
             <label className="flex items-center gap-2.5 cursor-pointer">
               <input
@@ -237,7 +352,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
                   </span>
                 </label>
                 <p className="text-[#7d7389] text-xs mt-2" style={{ fontFamily: "Lora, serif" }}>
-                  Al publicar, esta historia pasará a revisión antes de quedar visible públicamente (Sección 4.5).
+                  Cada capítulo nuevo de una obra +18 pasa por revisión antes de quedar visible (Sección 4.5).
                 </p>
               </div>
             )}
@@ -297,48 +412,62 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
             />
           </div>
 
-          <div>
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Texto completo
-            </label>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              rows={12}
-              className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-[15px] text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57] leading-relaxed"
-              style={{ fontFamily: "Lora, serif" }}
-              placeholder="El manto pesaba como plomo fundido..."
-            />
-          </div>
+          {mostrarEditorDeTexto && (
+            <div>
+              <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
+                Texto del capítulo 1
+              </label>
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={12}
+                className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-[15px] text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57] leading-relaxed"
+                style={{ fontFamily: "Lora, serif" }}
+                placeholder="El manto pesaba como plomo fundido..."
+              />
+            </div>
+          )}
+
+          {!mostrarEditorDeTexto && (
+            <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
+              El texto de los capítulos se edita desde la lista de capítulos, en la pestaña Escribir.
+            </p>
+          )}
 
           {err && <p className="text-[#e08a8a] text-sm">{err}</p>}
 
-          <div className="flex gap-3">
+          {mostrarEditorDeTexto ? (
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={(e) => submit(e, "borrador")}
+                disabled={saving}
+                className="flex-1 py-3 rounded-sm border border-[#4a3f52] hover:border-[#B08D57] disabled:opacity-50 text-[#b8afc4] hover:text-[#e8c9a3] font-medium tracking-wide transition-colors"
+                style={{ fontFamily: "Fraunces, serif" }}
+              >
+                {saving ? "Guardando..." : "Guardar borrador"}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => submit(e, "publicado")}
+                disabled={saving}
+                className="flex-1 py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-50 text-[#EDE6D6] font-medium tracking-wide transition-colors"
+                style={{ fontFamily: "Fraunces, serif" }}
+              >
+                {saving ? "Guardando..." : esAdulto ? "Enviar a revisión" : isEditing ? "Guardar y publicar" : "Publicar crónica"}
+              </button>
+            </div>
+          ) : (
             <button
               type="button"
-              onClick={(e) => submit(e, "borrador")}
+              onClick={(e) => submit(e, null)}
               disabled={saving}
-              className="flex-1 py-3 rounded-sm border border-[#4a3f52] hover:border-[#B08D57] disabled:opacity-50 text-[#b8afc4] hover:text-[#e8c9a3] font-medium tracking-wide transition-colors"
+              className="w-full py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-50 text-[#EDE6D6] font-medium tracking-wide transition-colors"
               style={{ fontFamily: "Fraunces, serif" }}
             >
-              {saving ? "Guardando..." : "Guardar borrador"}
+              {saving ? "Guardando..." : "Guardar cambios"}
             </button>
-            <button
-              type="button"
-              onClick={(e) => submit(e, "publicado")}
-              disabled={saving}
-              className="flex-1 py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-50 text-[#EDE6D6] font-medium tracking-wide transition-colors"
-              style={{ fontFamily: "Fraunces, serif" }}
-            >
-              {saving
-                ? "Guardando..."
-                : esAdulto
-                ? "Enviar a revisión"
-                : isEditing
-                ? "Guardar y publicar"
-                : "Publicar crónica"}
-            </button>
-          </div>
+          )}
         </form>
       </div>
 

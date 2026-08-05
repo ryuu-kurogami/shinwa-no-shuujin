@@ -128,6 +128,12 @@ export default function StoryCard({ story, onOpen, isSaved, onToggleSave, onView
             ) : (
               story.author_name
             )}
+            {story.estado_publicacion === "en_pausa" && (
+              <span className="text-[#B08D57]"> · en pausa</span>
+            )}
+            {story.estado_publicacion === "finalizado" && (
+              <span className="text-[#7C8B63]"> · finalizada</span>
+            )}
           </p>
         </div>
       </button>

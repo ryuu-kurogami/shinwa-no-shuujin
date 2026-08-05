@@ -5,7 +5,7 @@ import ReportModal from "./ReportModal";
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
-export default function CommentThread({ storyId, storyAuthorId, user }) {
+export default function CommentThread({ capituloId, storyAuthorId, user }) {
   const [comments, setComments] = useState(null);
   const [miUsername, setMiUsername] = useState(null);
   const [modoComentario, setModoComentario] = useState("identificado"); // "identificado" | "anonimo"
@@ -26,10 +26,10 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
     const { data, error } = await supabase
       .from("comments")
       .select("*")
-      .eq("story_id", storyId)
+      .eq("capitulo_id", capituloId)
       .order("created_at", { ascending: false });
     if (!error) setComments(data);
-  }, [storyId]);
+  }, [capituloId]);
 
   useEffect(() => {
     load();
@@ -87,7 +87,7 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
       const { error } = await supabase.functions.invoke("verify-comment", {
         body: {
           token: captchaToken,
-          story_id: storyId,
+          capitulo_id: capituloId,
           text: text.trim(),
           is_private: isPrivate,
           is_anonymous: modoComentario === "anonimo",
@@ -130,7 +130,7 @@ export default function CommentThread({ storyId, storyAuthorId, user }) {
           className="text-[#EDE6D6] text-lg"
           style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}
         >
-          Ecos de los lectores {comments ? `(${comments.length})` : ""}
+          Ecos de los lectores en este capítulo {comments ? `(${comments.length})` : ""}
         </h4>
       </div>
 

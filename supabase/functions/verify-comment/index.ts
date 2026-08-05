@@ -37,10 +37,10 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { token, story_id, text, is_private, is_anonymous } = await req.json()
+    const { token, capitulo_id, text, is_private, is_anonymous } = await req.json()
 
     // --- 0. Validaciones básicas de entrada ---
-    if (!token || !story_id || !text || typeof text !== 'string' || !text.trim()) {
+    if (!token || !capitulo_id || !text || typeof text !== 'string' || !text.trim()) {
       return jsonResponse({ error: 'Datos incompletos' }, 400)
     }
     if (text.length > 2000) {
@@ -93,6 +93,20 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
+
+    // --- 3.05 Resolver la historia a partir del capítulo, y confirmar que
+    // el capítulo existe y está publicado (no se puede comentar un borrador
+    // o algo todavía en revisión llamando a la función directo).
+    const { data: capitulo } = await supabase
+      .from('capitulos')
+      .select('id, story_id, estado')
+      .eq('id', capitulo_id)
+      .maybeSingle()
+
+    if (!capitulo || capitulo.estado !== 'publicado') {
+      return jsonResponse({ error: 'Ese capítulo no está disponible para comentar.' }, 400)
+    }
+    const story_id = capitulo.story_id
 
     // --- 3.1 Bloquear si el usuario tiene un baneo vigente ---
     const { data: isBanned } = await supabase.rpc('is_baneado', { p_user_id: verifiedUserId })
@@ -155,6 +169,7 @@ Deno.serve(async (req: Request) => {
 
     const { data, error } = await supabase.from('comments').insert({
       story_id,
+      capitulo_id,
       text: text.trim(),
       is_private: !!is_private,
       commenter_name: safeCommenterName,

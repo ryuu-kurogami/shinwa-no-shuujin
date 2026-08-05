@@ -104,17 +104,52 @@ export default function ModeracionPage() {
   }, []);
 
   const cargarEnRevision = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("stories")
-      .select("id, title, author_id, author_name, created_at, es_adulto")
-      .eq("estado", "pendiente_revision")
-      .order("created_at", { ascending: true });
+    const [{ data: historias, error: errH }, { data: capitulos, error: errC }] = await Promise.all([
+      supabase
+        .from("stories")
+        .select("id, title, author_id, author_name, created_at, es_adulto")
+        .eq("estado", "pendiente_revision")
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("capitulos")
+        .select("id, numero, titulo, created_at, story:stories(id, title, author_id, author_name, es_adulto)")
+        .eq("estado", "pendiente_revision")
+        .order("created_at", { ascending: true }),
+    ]);
 
-    if (error) {
+    if (errH || errC) {
       setErr("No se pudo cargar el contenido en revisión.");
       return;
     }
-    setEnRevision(data || []);
+
+    const itemsHistorias = (historias || []).map((h) => ({
+      tipo: "historia",
+      id: h.id,
+      title: h.title,
+      author_name: h.author_name,
+      created_at: h.created_at,
+      es_adulto: h.es_adulto,
+    }));
+
+    // Capítulos nuevos de obras +18 ya existentes (Sección 4.5) — no
+    // confundir con la revisión inicial de la historia, que es la de arriba.
+    const itemsCapitulos = (capitulos || [])
+      .filter((c) => c.story)
+      .map((c) => ({
+        tipo: "capitulo",
+        id: c.id,
+        title: c.story.title,
+        author_name: c.story.author_name,
+        created_at: c.created_at,
+        es_adulto: c.story.es_adulto,
+        numero: c.numero,
+        capituloTitulo: c.titulo,
+      }));
+
+    const todos = [...itemsHistorias, ...itemsCapitulos].sort(
+      (a, b) => new Date(a.created_at) - new Date(b.created_at)
+    );
+    setEnRevision(todos);
   }, []);
 
   const cargarBaneados = useCallback(async () => {
@@ -179,14 +214,17 @@ export default function ModeracionPage() {
     cargarBaneados();
   };
 
-  const aprobarEnRevision = async (story) => {
-    await supabase.from("stories").update({ estado: "publicado" }).eq("id", story.id);
+  const aprobarEnRevision = async (item) => {
+    const tabla = item.tipo === "historia" ? "stories" : "capitulos";
+    await supabase.from(tabla).update({ estado: "publicado" }).eq("id", item.id);
     cargarEnRevision();
   };
 
-  const rechazarEnRevision = async (story) => {
-    if (!window.confirm(`¿Rechazar "${story.title}"? Vuelve a borrador para que el autor la revise.`)) return;
-    await supabase.from("stories").update({ estado: "borrador" }).eq("id", story.id);
+  const rechazarEnRevision = async (item) => {
+    const etiqueta = item.tipo === "historia" ? `"${item.title}"` : `"${item.title}" — capítulo ${item.numero}`;
+    if (!window.confirm(`¿Rechazar ${etiqueta}? Vuelve a borrador para que el autor lo revise.`)) return;
+    const tabla = item.tipo === "historia" ? "stories" : "capitulos";
+    await supabase.from(tabla).update({ estado: "borrador" }).eq("id", item.id);
     cargarEnRevision();
   };
 
@@ -350,34 +388,36 @@ export default function ModeracionPage() {
         </p>
       ) : (
         <div className="space-y-3 mb-10">
-          {enRevision.map((s) => (
+          {enRevision.map((item) => (
             <div
-              key={s.id}
+              key={`${item.tipo}-${item.id}`}
               className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-4 flex items-center gap-3 flex-wrap"
             >
               <div className="min-w-0 flex-1">
                 <p className="text-[#EDE6D6] text-sm" style={{ fontFamily: "Lora, serif" }}>
-                  <strong>{s.title}</strong> — por {s.author_name}
-                  {s.es_adulto && (
+                  <strong>{item.title}</strong>
+                  {item.tipo === "capitulo" && ` — capítulo ${item.numero}${item.capituloTitulo ? `: ${item.capituloTitulo}` : ""}`}
+                  {" "}— por {item.author_name}
+                  {item.es_adulto && (
                     <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-[#7A2E2E]/30 text-[#e08a8a] ml-2">
                       +18
                     </span>
                   )}
                 </p>
                 <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
-                  Enviada el {new Date(s.created_at).toLocaleDateString("es-ES")}
+                  Enviad{item.tipo === "capitulo" ? "o" : "a"} el {new Date(item.created_at).toLocaleDateString("es-ES")}
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => aprobarEnRevision(s)}
+                  onClick={() => aprobarEnRevision(item)}
                   className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors"
                   style={{ fontFamily: "Lora, serif" }}
                 >
                   <CheckCircle2 size={12} /> Aprobar y publicar
                 </button>
                 <button
-                  onClick={() => rechazarEnRevision(s)}
+                  onClick={() => rechazarEnRevision(item)}
                   className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10 transition-colors"
                   style={{ fontFamily: "Lora, serif" }}
                 >

@@ -1,14 +1,30 @@
-import React, { useEffect, useState } from "react";
-import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag } from "lucide-react";
+import React, { useEffect, useState, useCallback } from "react";
+import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag, ChevronLeft, ChevronRight, BookOpen } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
 import { supabase, ADMIN_EMAILS, signInWithGoogle } from "../lib/supabaseClient";
 import ReportModal from "./ReportModal";
 
+const ESTADO_PUBLICACION_LABEL = {
+  en_emision: "En emisión",
+  en_pausa: "En pausa",
+  finalizado: "Finalizado",
+};
+
+// Estado interno de un capítulo (distinto del "estado de emisión" de la
+// obra) — solo lo ve el autor/admin, porque RLS es lo único que hace que
+// un capítulo sin publicar les llegue a ellos en primer lugar.
+const ESTADO_CAPITULO_LABEL = {
+  borrador: "Borrador",
+  pendiente_revision: "En revisión",
+};
+
 export default function StoryReader({ story, user, onClose, onDeleted, onEdit, onViewAuthor }) {
   const [siguiendo, setSiguiendo] = useState(false);
   const [contadorSeguidores, setContadorSeguidores] = useState(null);
   const [reportando, setReportando] = useState(false);
+  const [capitulos, setCapitulos] = useState(null);
+  const [capituloActualId, setCapituloActualId] = useState(null);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -16,13 +32,36 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Cuenta la lectura una sola vez al abrir esta historia
+  // Carga la lista de capítulos de esta obra (RLS ya filtra: un lector
+  // cualquiera solo ve los publicados; el autor/admin ven todos, incluidos
+  // borradores y los que están en revisión).
+  const cargarCapitulos = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("capitulos")
+      .select("*")
+      .eq("story_id", story.id)
+      .order("numero", { ascending: true });
+    if (!error) {
+      setCapitulos(data || []);
+      setCapituloActualId((actual) => actual || data?.[0]?.id || null);
+    }
+  }, [story.id]);
+
   useEffect(() => {
-    supabase.rpc("increment_lecturas", { p_story_id: story.id }).then(({ error }) => {
+    cargarCapitulos();
+  }, [cargarCapitulos]);
+
+  const capituloActual = capitulos?.find((c) => c.id === capituloActualId) || null;
+  const indiceActual = capitulos ? capitulos.findIndex((c) => c.id === capituloActualId) : -1;
+
+  // Cuenta la lectura una sola vez por capítulo que se abre
+  useEffect(() => {
+    if (!capituloActual || capituloActual.estado !== "publicado") return;
+    supabase.rpc("increment_lecturas_capitulo", { p_capitulo_id: capituloActual.id }).then(({ error }) => {
       if (error) console.error("Error al contar lectura:", error.message);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [story.id]);
+  }, [capituloActual?.id]);
 
   // Estado de "seguir" al autor de esta historia
   useEffect(() => {
@@ -78,11 +117,16 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
   const canDelete = isAdmin || isAuthor;
 
   const remove = async () => {
-    if (!window.confirm("¿Borrar esta historia? No se puede deshacer.")) return;
+    if (!window.confirm("¿Borrar esta historia? Se borran todos sus capítulos. No se puede deshacer.")) return;
     await supabase.from("stories").delete().eq("id", story.id);
     onDeleted(story.id);
     onClose();
   };
+
+  const irACapitulo = (id) => setCapituloActualId(id);
+  const irAAnterior = () => indiceActual > 0 && setCapituloActualId(capitulos[indiceActual - 1].id);
+  const irASiguiente = () =>
+    capitulos && indiceActual < capitulos.length - 1 && setCapituloActualId(capitulos[indiceActual + 1].id);
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm overflow-y-auto">
@@ -131,12 +175,17 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
           <span className="text-[#7C8B63] text-xs tracking-[0.15em] uppercase" style={{ fontFamily: "Lora, serif" }}>
             La marca del relato
           </span>
+          {story.estado_publicacion && (
+            <span className="text-[#7d7389] text-xs tracking-[0.1em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+              · {ESTADO_PUBLICACION_LABEL[story.estado_publicacion] || story.estado_publicacion}
+            </span>
+          )}
         </div>
 
         <h1 className="text-[#EDE6D6] text-3xl sm:text-4xl leading-tight mb-2" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
           {story.title}
         </h1>
-        <div className="flex items-center gap-3 mb-8 flex-wrap">
+        <div className="flex items-center gap-3 mb-6 flex-wrap">
           <p className="text-[#7d7389] text-sm" style={{ fontFamily: "Lora, serif" }}>
             por{" "}
             {onViewAuthor ? (
@@ -172,11 +221,72 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
           )}
         </div>
 
-        <div className="text-[#d8d1e0] text-[17px] leading-[1.85] whitespace-pre-line" style={{ fontFamily: "Lora, serif" }}>
-          {story.content}
-        </div>
+        {/* Índice de capítulos — solo tiene sentido mostrarlo si hay más de uno */}
+        {capitulos && capitulos.length > 1 && (
+          <div className="flex items-center gap-2 mb-6">
+            <BookOpen size={13} className="text-[#7C8B63] shrink-0" />
+            <div className="flex flex-wrap gap-1.5">
+              {capitulos.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => irACapitulo(c.id)}
+                  className={`px-2.5 py-1 rounded-sm border text-xs transition-colors ${
+                    c.id === capituloActualId
+                      ? "border-[#B08D57] text-[#e8c9a3] bg-[#B08D57]/10"
+                      : "border-[#4a3f52] text-[#7d7389] hover:text-[#b8afc4]"
+                  }`}
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  {c.numero}
+                  {c.estado !== "publicado" && ` · ${ESTADO_CAPITULO_LABEL[c.estado] || c.estado}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-        <CommentThread storyId={story.id} storyAuthorId={story.author_id} user={user} />
+        {!capituloActual ? (
+          <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>Cargando capítulo...</p>
+        ) : (
+          <>
+            {capituloActual.titulo && (
+              <h2 className="text-[#e8c9a3] text-xl mb-4" style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}>
+                Capítulo {capituloActual.numero}: {capituloActual.titulo}
+              </h2>
+            )}
+            {capituloActual.estado !== "publicado" && (
+              <p className="text-[#B08D57] text-xs uppercase tracking-wide mb-4" style={{ fontFamily: "Lora, serif" }}>
+                {ESTADO_CAPITULO_LABEL[capituloActual.estado] || capituloActual.estado} — solo vos y el admin pueden ver esto
+              </p>
+            )}
+            <div className="text-[#d8d1e0] text-[17px] leading-[1.85] whitespace-pre-line" style={{ fontFamily: "Lora, serif" }}>
+              {capituloActual.content}
+            </div>
+
+            {capitulos && capitulos.length > 1 && (
+              <div className="flex justify-between items-center mt-8 pt-6 border-t border-[#4a3f52]">
+                <button
+                  onClick={irAAnterior}
+                  disabled={indiceActual <= 0}
+                  className="flex items-center gap-1.5 text-sm text-[#b8afc4] hover:text-[#e8c9a3] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  <ChevronLeft size={16} /> Anterior
+                </button>
+                <button
+                  onClick={irASiguiente}
+                  disabled={!capitulos || indiceActual >= capitulos.length - 1}
+                  className="flex items-center gap-1.5 text-sm text-[#b8afc4] hover:text-[#e8c9a3] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  Siguiente <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+
+            <CommentThread capituloId={capituloActual.id} storyAuthorId={story.author_id} user={user} />
+          </>
+        )}
       </div>
 
       {reportando && (

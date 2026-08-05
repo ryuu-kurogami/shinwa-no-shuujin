@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { ScrollText, Sparkles, Search, X, Heart } from "lucide-react";
+import { ScrollText, Sparkles, Search, X, Heart, ShieldAlert, ArrowLeft } from "lucide-react";
 import { supabase, signInWithGoogle, ADMIN_EMAILS } from "./lib/supabaseClient";
 import AuthButton from "./components/AuthButton";
 import NavBar from "./components/NavBar";
@@ -43,7 +43,7 @@ export default function App() {
   const [tab, setTab] = useState("archivo"); // archivo | explorar | biblioteca | perfil | escribir
   const [umbralCruzado, setUmbralCruzado] = useState(pactoYaAceptado());
   const [edad18Confirmada, setEdad18Confirmada] = useState(edad18YaConfirmada());
-  const [historiaPendienteDeEdad, setHistoriaPendienteDeEdad] = useState(null);
+  const [accionPendienteDeEdad, setAccionPendienteDeEdad] = useState(null); // historia | "seccion" | null
   const [necesitaUsername, setNecesitaUsername] = useState(false);
   const [eliminarEn, setEliminarEn] = useState(null);
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
@@ -53,21 +53,35 @@ export default function App() {
   // el AgeGate (ver Términos, Sección 4.2) en vez de abrir el lector directo.
   const handleOpenStory = (story) => {
     if (story?.es_adulto && !edad18Confirmada) {
-      setHistoriaPendienteDeEdad(story);
+      setAccionPendienteDeEdad(story);
       return;
     }
     setOpenStory(story);
   };
 
-  const confirmarYAbrir = () => {
-    confirmarEdad18();
-    setEdad18Confirmada(true);
-    setOpenStory(historiaPendienteDeEdad);
-    setHistoriaPendienteDeEdad(null);
+  // Igual que arriba, pero para entrar a la sección +18 en sí (Términos,
+  // Sección 4.1) en vez de abrir una historia puntual.
+  const irASeccionAdultos = () => {
+    if (!edad18Confirmada) {
+      setAccionPendienteDeEdad("seccion");
+      return;
+    }
+    setTab("adultos");
   };
 
-  const cancelarApertura = () => {
-    setHistoriaPendienteDeEdad(null);
+  const confirmarYContinuar = () => {
+    confirmarEdad18();
+    setEdad18Confirmada(true);
+    if (accionPendienteDeEdad === "seccion") {
+      setTab("adultos");
+    } else if (accionPendienteDeEdad) {
+      setOpenStory(accionPendienteDeEdad);
+    }
+    setAccionPendienteDeEdad(null);
+  };
+
+  const cancelarAccionPendiente = () => {
+    setAccionPendienteDeEdad(null);
   };
 
   // Sesión: se lee al montar y se escucha cualquier cambio (login/logout)
@@ -246,7 +260,9 @@ export default function App() {
 
   const storiesFiltradas = (() => {
     if (!stories) return null;
-    let result = stories.filter((s) => s.estado === "publicado");
+    // El contenido +18 no se mezcla acá — vive en su propia sección
+    // (Términos, Sección 4.1), no en el archivo general.
+    let result = stories.filter((s) => s.estado === "publicado" && !s.es_adulto);
     if (categoriaFiltro !== "todos") {
       result = result.filter((s) => (s.categoria || "corto") === categoriaFiltro);
     }
@@ -255,7 +271,7 @@ export default function App() {
 
   const storiesExploradas = (() => {
     if (!stories) return null;
-    let result = stories.filter((s) => s.estado === "publicado");
+    let result = stories.filter((s) => s.estado === "publicado" && !s.es_adulto);
     if (tagFiltro) {
       result = result.filter((s) => (s.tags || []).includes(tagFiltro));
     }
@@ -281,8 +297,14 @@ export default function App() {
     return result;
   })();
 
+  // Lista dedicada de la sección +18 — solo se arma cuando hace falta, no
+  // se filtra por categoría/tags/búsqueda, así se mantiene simple.
+  const storiesAdultos = stories
+    ? stories.filter((s) => s.estado === "publicado" && s.es_adulto)
+    : null;
+
   const tagsDisponibles = stories
-    ? [...new Set(stories.filter((s) => s.estado === "publicado").flatMap((s) => s.tags || []))].sort()
+    ? [...new Set(stories.filter((s) => s.estado === "publicado" && !s.es_adulto).flatMap((s) => s.tags || []))].sort()
     : [];
 
   return (
@@ -294,7 +316,7 @@ export default function App() {
       {umbralCruzado && user && !eliminarEn && necesitaUsername && (
         <UsernameGate userId={user.id} onDone={() => setNecesitaUsername(false)} />
       )}
-      {historiaPendienteDeEdad && <AgeGate onConfirm={confirmarYAbrir} onDecline={cancelarApertura} />}
+      {accionPendienteDeEdad && <AgeGate onConfirm={confirmarYContinuar} onDecline={cancelarAccionPendiente} />}
 
       <NavBar current={tab} onChange={handleChangeTab} user={user} isAdmin={isAdmin} />
 
@@ -452,6 +474,14 @@ export default function App() {
               )}
             </div>
 
+            <button
+              onClick={irASeccionAdultos}
+              className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#e08a8a] transition-colors text-xs mb-6"
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              <ShieldAlert size={12} /> Sección +18
+            </button>
+
             {tagsDisponibles.length > 0 && (
               <div className="flex gap-2 mb-6 flex-wrap items-center">
                 {tagsDisponibles.map((t) => (
@@ -548,6 +578,49 @@ export default function App() {
         )}
 
         {tab === "moderacion" && isAdmin && <ModeracionPage />}
+        {tab === "adultos" && (
+          <div className="max-w-3xl mx-auto px-5 pt-10 pb-24">
+            <button
+              onClick={() => setTab("explorar")}
+              className="mb-8 flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              <ArrowLeft size={16} /> Volver
+            </button>
+
+            <div className="flex items-center gap-2 mb-6">
+              <ShieldAlert size={18} className="text-[#7A2E2E]" />
+              <h1 className="text-[#EDE6D6] text-2xl" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
+                Sección +18
+              </h1>
+            </div>
+
+            {storiesAdultos === null ? (
+              <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
+            ) : storiesAdultos.length === 0 ? (
+              <p className="text-[#7d7389] italic" style={{ fontFamily: "Lora, serif" }}>
+                Todavía no hay historias en esta sección.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {storiesAdultos.map((s) => (
+                  <StoryCard
+                    key={s.id}
+                    story={s}
+                    onOpen={handleOpenStory}
+                    isSaved={savedIds.has(s.id)}
+                    onToggleSave={toggleSave}
+                    onViewAuthor={handleViewAuthor}
+                    isLiked={likedIds.has(s.id)}
+                    likesCount={likesCountMap[s.id] || 0}
+                    onToggleLike={toggleLike}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === "transparencia" && (
           <TransparenciaPage onBack={() => setTab("archivo")} isAdmin={isAdmin} />
         )}
