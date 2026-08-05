@@ -34,11 +34,20 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
       setLoadingMore(true);
     }
 
-    const currentPage = isInitial ? 0 : page;
-    const from = currentPage * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+    // Calculamos el inicio basándonos en la longitud real actual
+    let from = 0;
+    let to = PAGE_SIZE - 1;
 
-    // Traemos de a 10 comentarios usando .range()
+    if (!isInitial) {
+      setComments((current) => {
+        if (current) {
+          from = current.length;
+          to = from + PAGE_SIZE - 1;
+        }
+        return current;
+      });
+    }
+
     const { data, error, count } = await supabase
       .from("comments")
       .select("*", { count: "exact" })
@@ -47,21 +56,23 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
       .range(from, to);
 
     if (!error && data) {
-      if (isInitial) {
-        setComments(data);
-      } else {
-        setComments((prev) => [...prev, ...data]);
-      }
+      setComments((prev) => {
+        if (isInitial || !prev) return data;
 
-      // Si trajimos menos que PAGE_SIZE o alcanzamos el total, ya no hay más
+        // Filtro de seguridad anti-duplicados por ID
+        const idsExistentes = new Set(prev.map((c) => c.id));
+        const nuevosSinDuplicar = data.filter((c) => !idsExistentes.has(c.id));
+        return [...prev, ...nuevosSinDuplicar];
+      });
+
       const totalCount = count ?? 0;
-      const loadedSoFar = from + data.length;
-      setHasMore(loadedSoFar < totalCount && data.length === PAGE_SIZE);
-      setPage(currentPage + 1);
+      const loadedTotal = from + data.length;
+      setHasMore(loadedTotal < totalCount && data.length === PAGE_SIZE);
+      setPage((prevPage) => (isInitial ? 1 : prevPage + 1));
     }
 
     setLoadingMore(false);
-  }, [capituloId, page]);
+  }, [capituloId]);
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
@@ -237,7 +248,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
         {err && <p className="text-[#e08a8a] text-xs">{err}</p>}
       </form>
 
-      {comments === null ? (
+     {comments === null ? (
         <p className="text-[#7d7389] text-sm">Cargando ecos...</p>
       ) : comments.length === 0 ? (
         <p className="text-[#7d7389] text-sm italic" style={{ fontFamily: "Lora, serif" }}>
@@ -245,64 +256,64 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
         </p>
       ) : (
         <>
-        <ul className="space-y-4">
-          {comments
-            .filter((c) => !c.is_private || canSeePrivate(c))
-            .map((c) => (
-              <li
-                key={c.id}
-                className={`border-l-2 pl-3.5 ${
-                  c.is_private ? "border-[#B08D57]/60" : "border-[#7C8B63]/50"
-                }`}
-              >
-                <div className="flex items-baseline gap-2 mb-0.5">
-                  <span
-                    className="text-[#e8c9a3] text-sm font-semibold"
+          <ul className="space-y-4">
+            {comments
+              .filter((c) => !c.is_private || canSeePrivate(c))
+              .map((c) => (
+                <li
+                  key={c.id}
+                  className={`border-l-2 pl-3.5 ${
+                    c.is_private ? "border-[#B08D57]/60" : "border-[#7C8B63]/50"
+                  }`}
+                >
+                  <div className="flex items-baseline gap-2 mb-0.5">
+                    <span
+                      className="text-[#e8c9a3] text-sm font-semibold"
+                      style={{ fontFamily: "Lora, serif" }}
+                    >
+                      {c.commenter_name}
+                    </span>
+                    {c.is_private && (
+                      <span className="flex items-center gap-1 text-[#B08D57] text-[10px] uppercase tracking-wide">
+                        <Lock size={10} /> privado
+                      </span>
+                    )}
+                    <span className="text-[#7d7389] text-[11px]">
+                      {new Date(c.created_at).toLocaleDateString("es-ES", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                    {isAdmin && (
+                      <button
+                        onClick={() => deleteComment(c.id)}
+                        className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                    {user && !isAdmin && (
+                      <button
+                        onClick={() => setReportandoComentario(c.id)}
+                        className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
+                        title="Reportar comentario"
+                      >
+                        <Flag size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <p
+                    className="text-[#c9c1d4] text-[14.5px] leading-relaxed"
                     style={{ fontFamily: "Lora, serif" }}
                   >
-                    {c.commenter_name}
-                  </span>
-                  {c.is_private && (
-                    <span className="flex items-center gap-1 text-[#B08D57] text-[10px] uppercase tracking-wide">
-                      <Lock size={10} /> privado
-                    </span>
-                  )}
-                  <span className="text-[#7d7389] text-[11px]">
-                    {new Date(c.created_at).toLocaleDateString("es-ES", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                  </span>
-                  {isAdmin && (
-                    <button
-                      onClick={() => deleteComment(c.id)}
-                      className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                  {user && !isAdmin && (
-                    <button
-                      onClick={() => setReportandoComentario(c.id)}
-                      className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
-                      title="Reportar comentario"
-                    >
-                      <Flag size={12} />
-                    </button>
-                  )}
-                </div>
-                <p
-                  className="text-[#c9c1d4] text-[14.5px] leading-relaxed"
-                  style={{ fontFamily: "Lora, serif" }}
-                >
-                  {c.text}
-                </p>
-              </li>
-            ))}
-        </ul>
-        
-        {/* Botón de paginación Cargar más */}
+                    {c.text}
+                  </p>
+                </li>
+              ))}
+          </ul>
+
+          {/* Botón de paginación Cargar más */}
           {hasMore && (
             <div className="flex justify-center mt-6">
               <button
@@ -316,7 +327,6 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
             </div>
           )}
         </>
-
       )}
 
       {reportandoComentario && (
