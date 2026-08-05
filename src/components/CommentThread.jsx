@@ -17,19 +17,57 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
   const [reportandoComentario, setReportandoComentario] = useState(null);
   const widgetRef = useRef(null);
   const turnstileId = useRef(null);
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
   const isStoryAuthor = user && user.id === storyAuthorId;
   const canSeePrivate = (c) => isAdmin || isStoryAuthor || (user && c.user_id === user.id);
 
-  const load = useCallback(async () => {
-    const { data, error } = await supabase
+  const load = useCallback(async (isInitial = true) => {
+    if (isInitial) {
+      setPage(0);
+      setHasMore(true);
+    } else {
+      setLoadingMore(true);
+    }
+
+    const currentPage = isInitial ? 0 : page;
+    const from = currentPage * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    // Traemos de a 10 comentarios usando .range()
+    const { data, error, count } = await supabase
       .from("comments")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("capitulo_id", capituloId)
-      .order("created_at", { ascending: false });
-    if (!error) setComments(data);
-  }, [capituloId]);
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (!error && data) {
+      if (isInitial) {
+        setComments(data);
+      } else {
+        setComments((prev) => [...prev, ...data]);
+      }
+
+      // Si trajimos menos que PAGE_SIZE o alcanzamos el total, ya no hay más
+      const totalCount = count ?? 0;
+      const loadedSoFar = from + data.length;
+      setHasMore(loadedSoFar < totalCount && data.length === PAGE_SIZE);
+      setPage(currentPage + 1);
+    }
+
+    setLoadingMore(false);
+  }, [capituloId, page]);
+
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      load(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -206,6 +244,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
           Nadie ha dejado un eco todavía. El primero marca el camino.
         </p>
       ) : (
+        <>
         <ul className="space-y-4">
           {comments
             .filter((c) => !c.is_private || canSeePrivate(c))
@@ -262,6 +301,22 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
               </li>
             ))}
         </ul>
+        
+        {/* Botón de paginación Cargar más */}
+          {hasMore && (
+            <div className="flex justify-center mt-6">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="px-4 py-2 text-sm text-[#e8c9a3] bg-[#2d2438] hover:bg-[#3d324a] border border-[#4a3f52] rounded-md transition-colors disabled:opacity-50 cursor-pointer"
+                style={{ fontFamily: "Lora, serif" }}
+              >
+                {loadingMore ? "Cargando ecos..." : "Cargar más ecos"}
+              </button>
+            </div>
+          )}
+        </>
+
       )}
 
       {reportandoComentario && (

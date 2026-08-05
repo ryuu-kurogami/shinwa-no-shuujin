@@ -72,6 +72,16 @@ CREATE TYPE "public"."estado_historia_enum" AS ENUM (
 ALTER TYPE "public"."estado_historia_enum" OWNER TO "postgres";
 
 
+CREATE TYPE "public"."estado_publicacion_enum" AS ENUM (
+    'en_emision',
+    'en_pausa',
+    'finalizado'
+);
+
+
+ALTER TYPE "public"."estado_publicacion_enum" OWNER TO "postgres";
+
+
 CREATE TYPE "public"."motivo_reporte_enum" AS ENUM (
     'plagio_interno',
     'plagio_externo',
@@ -134,6 +144,28 @@ $$;
 
 
 ALTER FUNCTION "public"."increment_lecturas"("p_story_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."increment_lecturas_capitulo"("p_capitulo_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+declare
+  v_story_id uuid;
+begin
+  update public.capitulos
+  set lecturas = lecturas + 1
+  where id = p_capitulo_id and estado = 'publicado'
+  returning story_id into v_story_id;
+
+  if v_story_id is not null then
+    update public.stories set lecturas = lecturas + 1
+    where id = v_story_id and estado = 'publicado';
+  end if;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."increment_lecturas_capitulo"("p_capitulo_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean
@@ -264,6 +296,21 @@ CREATE TABLE IF NOT EXISTS "public"."anuncios" (
 ALTER TABLE "public"."anuncios" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."capitulos" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "story_id" "uuid" NOT NULL,
+    "numero" integer NOT NULL,
+    "titulo" "text",
+    "content" "text" NOT NULL,
+    "estado" "public"."estado_historia_enum" DEFAULT 'publicado'::"public"."estado_historia_enum" NOT NULL,
+    "lecturas" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."capitulos" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."comments" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "story_id" "uuid" NOT NULL,
@@ -272,7 +319,8 @@ CREATE TABLE IF NOT EXISTS "public"."comments" (
     "is_private" boolean DEFAULT false NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "user_id" "uuid",
-    "ip_address" "text"
+    "ip_address" "text",
+    "capitulo_id" "uuid"
 );
 
 
@@ -320,7 +368,8 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "baneado_hasta" timestamp with time zone,
     "infracciones" integer DEFAULT 0 NOT NULL,
-    "username_changed_at" timestamp with time zone
+    "username_changed_at" timestamp with time zone,
+    "eliminar_en" timestamp with time zone
 );
 
 
@@ -360,7 +409,7 @@ CREATE TABLE IF NOT EXISTS "public"."stories" (
     "title" "text" NOT NULL,
     "span" "text" DEFAULT 'instante suspendido'::"text" NOT NULL,
     "excerpt" "text" NOT NULL,
-    "content" "text" NOT NULL,
+    "content" "text",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "portada_url" "text",
     "frase_iconica" character varying(80) DEFAULT 'Instante suspendido'::character varying,
@@ -370,6 +419,7 @@ CREATE TABLE IF NOT EXISTS "public"."stories" (
     "tags" "text"[] DEFAULT '{}'::"text"[],
     "estado" "public"."estado_historia_enum" DEFAULT 'publicado'::"public"."estado_historia_enum" NOT NULL,
     "lecturas" integer DEFAULT 0 NOT NULL,
+    "estado_publicacion" "public"."estado_publicacion_enum" DEFAULT 'en_emision'::"public"."estado_publicacion_enum" NOT NULL,
     CONSTRAINT "check_declaracion_18" CHECK (((NOT "es_adulto") OR ("declaracion_18_ok" = true)))
 );
 
@@ -384,6 +434,16 @@ ALTER TABLE ONLY "public"."admin_users"
 
 ALTER TABLE ONLY "public"."anuncios"
     ADD CONSTRAINT "anuncios_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."capitulos"
+    ADD CONSTRAINT "capitulos_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."capitulos"
+    ADD CONSTRAINT "capitulos_story_id_numero_key" UNIQUE ("story_id", "numero");
 
 
 
@@ -454,6 +514,16 @@ CREATE OR REPLACE TRIGGER "trg_validar_username_reservado" BEFORE INSERT OR UPDA
 
 ALTER TABLE ONLY "public"."admin_users"
     ADD CONSTRAINT "admin_users_id_fkey" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."capitulos"
+    ADD CONSTRAINT "capitulos_story_id_fkey" FOREIGN KEY ("story_id") REFERENCES "public"."stories"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."comments"
+    ADD CONSTRAINT "comments_capitulo_id_fkey" FOREIGN KEY ("capitulo_id") REFERENCES "public"."capitulos"("id") ON DELETE CASCADE;
 
 
 
@@ -538,6 +608,12 @@ CREATE POLICY "Admin lee y gestiona reportes" ON "public"."reportes" TO "authent
 
 
 
+CREATE POLICY "Borrar capitulo propio" ON "public"."capitulos" FOR DELETE USING ((EXISTS ( SELECT 1
+   FROM "public"."stories" "s"
+  WHERE (("s"."id" = "capitulos"."story_id") AND (("s"."author_id" = "auth"."uid"()) OR "public"."is_admin"())))));
+
+
+
 CREATE POLICY "Borrar comentarios" ON "public"."comments" FOR DELETE USING (((("user_id" IS NOT NULL) AND ("auth"."uid"() = "user_id")) OR (EXISTS ( SELECT 1
    FROM "public"."stories"
   WHERE (("stories"."id" = "comments"."story_id") AND ("stories"."author_id" = "auth"."uid"())))) OR "public"."is_admin"()));
@@ -545,6 +621,12 @@ CREATE POLICY "Borrar comentarios" ON "public"."comments" FOR DELETE USING (((("
 
 
 CREATE POLICY "Borrar historia propia o admin" ON "public"."stories" FOR DELETE TO "authenticated" USING ((("auth"."uid"() = "author_id") OR "public"."is_admin"()));
+
+
+
+CREATE POLICY "Crear capitulo propio" ON "public"."capitulos" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."stories" "s"
+  WHERE (("s"."id" = "capitulos"."story_id") AND ("s"."author_id" = "auth"."uid"()) AND (NOT "public"."is_baneado"("auth"."uid"()))))));
 
 
 
@@ -557,6 +639,14 @@ CREATE POLICY "Crear reporte" ON "public"."reportes" FOR INSERT TO "authenticate
 
 
 CREATE POLICY "Cualquiera puede leer anuncios" ON "public"."anuncios" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "Editar capitulo propio" ON "public"."capitulos" FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM "public"."stories" "s"
+  WHERE (("s"."id" = "capitulos"."story_id") AND (("s"."author_id" = "auth"."uid"()) OR "public"."is_admin"()))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."stories" "s"
+  WHERE (("s"."id" = "capitulos"."story_id") AND (("s"."author_id" = "auth"."uid"()) OR "public"."is_admin"())))));
 
 
 
@@ -577,6 +667,14 @@ CREATE POLICY "Gestionar likes propios" ON "public"."likes" TO "authenticated" U
 
 
 CREATE POLICY "Gestionar seguidores propios" ON "public"."seguidores" TO "authenticated" USING (("auth"."uid"() = "seguidor_id")) WITH CHECK (("auth"."uid"() = "seguidor_id"));
+
+
+
+CREATE POLICY "Lectura de capitulos publicados" ON "public"."capitulos" FOR SELECT USING (((("estado" = 'publicado'::"public"."estado_historia_enum") AND (EXISTS ( SELECT 1
+   FROM "public"."stories" "s"
+  WHERE (("s"."id" = "capitulos"."story_id") AND ("s"."estado" = 'publicado'::"public"."estado_historia_enum"))))) OR (EXISTS ( SELECT 1
+   FROM "public"."stories" "s"
+  WHERE (("s"."id" = "capitulos"."story_id") AND (("s"."author_id" = "auth"."uid"()) OR "public"."is_admin"()))))));
 
 
 
@@ -618,6 +716,9 @@ ALTER TABLE "public"."admin_users" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."anuncios" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."capitulos" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."comments" ENABLE ROW LEVEL SECURITY;
@@ -808,6 +909,11 @@ GRANT ALL ON FUNCTION "public"."increment_lecturas"("p_story_id" "uuid") TO "aut
 
 
 
+GRANT ALL ON FUNCTION "public"."increment_lecturas_capitulo"("p_capitulo_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."increment_lecturas_capitulo"("p_capitulo_id" "uuid") TO "authenticated";
+
+
+
 GRANT ALL ON FUNCTION "public"."unaccent"("text") TO "postgres";
 GRANT ALL ON FUNCTION "public"."unaccent"("text") TO "anon";
 GRANT ALL ON FUNCTION "public"."unaccent"("text") TO "authenticated";
@@ -860,6 +966,12 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."admin_users" TO "s
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."anuncios" TO "anon";
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."anuncios" TO "authenticated";
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."anuncios" TO "service_role";
+
+
+
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."capitulos" TO "anon";
+GRANT ALL ON TABLE "public"."capitulos" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."capitulos" TO "service_role";
 
 
 
