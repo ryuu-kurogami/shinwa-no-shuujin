@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from "react";
+// ✅ Ahora (con useRef incluido):
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag, ChevronLeft, ChevronRight, BookOpen } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
