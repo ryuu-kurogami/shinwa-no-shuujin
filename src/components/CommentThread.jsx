@@ -4,9 +4,13 @@ import { supabase, ADMIN_EMAILS } from "../lib/supabaseClient";
 import ReportModal from "./ReportModal";
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+const PAGE_SIZE = 10;
 
 export default function CommentThread({ capituloId, storyAuthorId, user }) {
   const [comments, setComments] = useState(null);
+  const [totalComments, setTotalComments] = useState(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [cargandoMas, setCargandoMas] = useState(false);
   const [miUsername, setMiUsername] = useState(null);
   const [modoComentario, setModoComentario] = useState("identificado"); // "identificado" | "anonimo"
   const [text, setText] = useState("");
@@ -17,67 +21,44 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
   const [reportandoComentario, setReportandoComentario] = useState(null);
   const widgetRef = useRef(null);
   const turnstileId = useRef(null);
-  const PAGE_SIZE = 10;
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
 
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
   const isStoryAuthor = user && user.id === storyAuthorId;
   const canSeePrivate = (c) => isAdmin || isStoryAuthor || (user && c.user_id === user.id);
 
-  const load = useCallback(async (isInitial = true) => {
-    if (isInitial) {
-      setPage(0);
-      setHasMore(true);
-    } else {
-      setLoadingMore(true);
-    }
-
-    // Calculamos el inicio basándonos en la longitud real actual
-    let from = 0;
-    let to = PAGE_SIZE - 1;
-
-    if (!isInitial) {
-      setComments((current) => {
-        if (current) {
-          from = current.length;
-          to = from + PAGE_SIZE - 1;
-        }
-        return current;
-      });
-    }
-
+  // Carga la primera página (10 comentarios) — se usa al entrar al capítulo
+  // y también después de enviar uno nuevo, para no acumular páginas viejas
+  // mezcladas con el resultado fresco.
+  const load = useCallback(async () => {
     const { data, error, count } = await supabase
       .from("comments")
       .select("*", { count: "exact" })
       .eq("capitulo_id", capituloId)
       .order("created_at", { ascending: false })
-      .range(from, to);
-
-    if (!error && data) {
-      setComments((prev) => {
-        if (isInitial || !prev) return data;
-
-        // Filtro de seguridad anti-duplicados por ID
-        const idsExistentes = new Set(prev.map((c) => c.id));
-        const nuevosSinDuplicar = data.filter((c) => !idsExistentes.has(c.id));
-        return [...prev, ...nuevosSinDuplicar];
-      });
-
-      const totalCount = count ?? 0;
-      const loadedTotal = from + data.length;
-      setHasMore(loadedTotal < totalCount && data.length === PAGE_SIZE);
-      setPage((prevPage) => (isInitial ? 1 : prevPage + 1));
+      .range(0, PAGE_SIZE - 1);
+    if (!error) {
+      setComments(data);
+      setTotalComments(count ?? data?.length ?? 0);
+      setHasMore((data || []).length === PAGE_SIZE);
     }
-
-    setLoadingMore(false);
   }, [capituloId]);
 
-  const handleLoadMore = () => {
-    if (!loadingMore && hasMore) {
-      load(false);
+  // Trae la siguiente página y la suma a lo que ya se había cargado.
+  const cargarMas = async () => {
+    if (!comments) return;
+    setCargandoMas(true);
+    const desde = comments.length;
+    const { data, error } = await supabase
+      .from("comments")
+      .select("*")
+      .eq("capitulo_id", capituloId)
+      .order("created_at", { ascending: false })
+      .range(desde, desde + PAGE_SIZE - 1);
+    if (!error) {
+      setComments((prev) => [...prev, ...(data || [])]);
+      setHasMore((data || []).length === PAGE_SIZE);
     }
+    setCargandoMas(false);
   };
 
   useEffect(() => {
@@ -179,7 +160,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
           className="text-[#EDE6D6] text-lg"
           style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}
         >
-          Ecos de los lectores en este capítulo {comments ? `(${comments.length})` : ""}
+          Ecos de los lectores en este capítulo {totalComments !== null ? `(${totalComments})` : ""}
         </h4>
       </div>
 
@@ -248,85 +229,82 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
         {err && <p className="text-[#e08a8a] text-xs">{err}</p>}
       </form>
 
-     {comments === null ? (
+      {comments === null ? (
         <p className="text-[#7d7389] text-sm">Cargando ecos...</p>
       ) : comments.length === 0 ? (
         <p className="text-[#7d7389] text-sm italic" style={{ fontFamily: "Lora, serif" }}>
           Nadie ha dejado un eco todavía. El primero marca el camino.
         </p>
       ) : (
-        <>
-          <ul className="space-y-4">
-            {comments
-              .filter((c) => !c.is_private || canSeePrivate(c))
-              .map((c) => (
-                <li
-                  key={c.id}
-                  className={`border-l-2 pl-3.5 ${
-                    c.is_private ? "border-[#B08D57]/60" : "border-[#7C8B63]/50"
-                  }`}
-                >
-                  <div className="flex items-baseline gap-2 mb-0.5">
-                    <span
-                      className="text-[#e8c9a3] text-sm font-semibold"
-                      style={{ fontFamily: "Lora, serif" }}
-                    >
-                      {c.commenter_name}
-                    </span>
-                    {c.is_private && (
-                      <span className="flex items-center gap-1 text-[#B08D57] text-[10px] uppercase tracking-wide">
-                        <Lock size={10} /> privado
-                      </span>
-                    )}
-                    <span className="text-[#7d7389] text-[11px]">
-                      {new Date(c.created_at).toLocaleDateString("es-ES", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </span>
-                    {isAdmin && (
-                      <button
-                        onClick={() => deleteComment(c.id)}
-                        className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                    {user && !isAdmin && (
-                      <button
-                        onClick={() => setReportandoComentario(c.id)}
-                        className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
-                        title="Reportar comentario"
-                      >
-                        <Flag size={12} />
-                      </button>
-                    )}
-                  </div>
-                  <p
-                    className="text-[#c9c1d4] text-[14.5px] leading-relaxed"
+        <ul className="space-y-4">
+          {comments
+            .filter((c) => !c.is_private || canSeePrivate(c))
+            .map((c) => (
+              <li
+                key={c.id}
+                className={`border-l-2 pl-3.5 ${
+                  c.is_private ? "border-[#B08D57]/60" : "border-[#7C8B63]/50"
+                }`}
+              >
+                <div className="flex items-baseline gap-2 mb-0.5">
+                  <span
+                    className="text-[#e8c9a3] text-sm font-semibold"
                     style={{ fontFamily: "Lora, serif" }}
                   >
-                    {c.text}
-                  </p>
-                </li>
-              ))}
-          </ul>
+                    {c.commenter_name}
+                  </span>
+                  {c.is_private && (
+                    <span className="flex items-center gap-1 text-[#B08D57] text-[10px] uppercase tracking-wide">
+                      <Lock size={10} /> privado
+                    </span>
+                  )}
+                  <span className="text-[#7d7389] text-[11px]">
+                    {new Date(c.created_at).toLocaleDateString("es-ES", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                  {isAdmin && (
+                    <button
+                      onClick={() => deleteComment(c.id)}
+                      className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                  {user && !isAdmin && (
+                    <button
+                      onClick={() => setReportandoComentario(c.id)}
+                      className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
+                      title="Reportar comentario"
+                    >
+                      <Flag size={12} />
+                    </button>
+                  )}
+                </div>
+                <p
+                  className="text-[#c9c1d4] text-[14.5px] leading-relaxed"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  {c.text}
+                </p>
+              </li>
+            ))}
+        </ul>
+      )}
 
-          {/* Botón de paginación Cargar más */}
-          {hasMore && (
-            <div className="flex justify-center mt-6">
-              <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="px-4 py-2 text-sm text-[#e8c9a3] bg-[#2d2438] hover:bg-[#3d324a] border border-[#4a3f52] rounded-md transition-colors disabled:opacity-50 cursor-pointer"
-                style={{ fontFamily: "Lora, serif" }}
-              >
-                {loadingMore ? "Cargando ecos..." : "Cargar más ecos"}
-              </button>
-            </div>
-          )}
-        </>
+      {comments && comments.length > 0 && hasMore && (
+        <div className="flex justify-center mt-5">
+          <button
+            onClick={cargarMas}
+            disabled={cargandoMas}
+            className="text-[#B08D57] hover:text-[#e8c9a3] disabled:opacity-40 transition-colors text-sm"
+            style={{ fontFamily: "Lora, serif" }}
+          >
+            {cargandoMas ? "Cargando..." : "Cargar más ecos"}
+          </button>
+        </div>
       )}
 
       {reportandoComentario && (

@@ -1,5 +1,4 @@
-// ✅ Ahora (con useRef incluido):
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag, ChevronLeft, ChevronRight, BookOpen } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
@@ -26,7 +25,6 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
   const [reportando, setReportando] = useState(false);
   const [capitulos, setCapitulos] = useState(null);
   const [capituloActualId, setCapituloActualId] = useState(null);
-  const finalDelTextoRef = useRef(null);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -56,41 +54,27 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
   const capituloActual = capitulos?.find((c) => c.id === capituloActualId) || null;
   const indiceActual = capitulos ? capitulos.findIndex((c) => c.id === capituloActualId) : -1;
 
-  // Cuenta la lectura al llegar al final del texto del capítulo
+  // Cuenta la lectura solo si se quedó al menos 10s en el capítulo, y una
+  // sola vez por capítulo por sesión de navegador (sessionStorage) — evita
+  // sumar lecturas por alguien que abre y cierra sin llegar a leer.
   useEffect(() => {
     if (!capituloActual || capituloActual.estado !== "publicado") return;
 
-    const capituloId = capituloActual.id;
-    const storageKey = `leido_cap_${capituloId}`;
-
-    // Si ya lo leyó en esta sesión, no hace nada
+    const storageKey = `read_cap_${capituloActual.id}`;
     if (sessionStorage.getItem(storageKey)) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const [entry] = entries;
-        if (entry.isIntersecting) {
-          supabase
-            .rpc("increment_lecturas_capitulo", { p_capitulo_id: capituloId })
-            .then(({ error }) => {
-              if (!error) {
-                sessionStorage.setItem(storageKey, "true");
-              } else {
-                console.error("Error al contar lectura:", error.message);
-              }
-            });
-          observer.disconnect();
+    const timer = setTimeout(() => {
+      supabase.rpc("increment_lecturas_capitulo", { p_capitulo_id: capituloActual.id }).then(({ error }) => {
+        if (error) {
+          console.error("Error al contar lectura:", error.message);
+          return;
         }
-      },
-      { threshold: 0.1 }
-    );
+        sessionStorage.setItem(storageKey, "true");
+      });
+    }, 10000);
 
-    if (finalDelTextoRef.current) {
-      observer.observe(finalDelTextoRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, [capituloActual?.id]);
+    return () => clearTimeout(timer);
+  }, [capituloActual?.id, capituloActual?.estado]);
 
   // Estado de "seguir" al autor de esta historia
   useEffect(() => {
@@ -288,13 +272,9 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
                 {ESTADO_CAPITULO_LABEL[capituloActual.estado] || capituloActual.estado} — solo vos y el admin pueden ver esto
               </p>
             )}
-          <div className="text-[#d8d1e0] text-[17px] leading-[1.85] whitespace-pre-line" style={{ fontFamily: "Lora, serif" }}>
+            <div className="text-[#d8d1e0] text-[17px] leading-[1.85] whitespace-pre-line" style={{ fontFamily: "Lora, serif" }}>
               {capituloActual.content}
             </div>
-
-            {/* Elemento invisible centinela para detectar cuando llega al final del texto */}
-            <div ref={finalDelTextoRef} className="h-2 w-full" />
-
 
             {capitulos && capitulos.length > 1 && (
               <div className="flex justify-between items-center mt-8 pt-6 border-t border-[#4a3f52]">
