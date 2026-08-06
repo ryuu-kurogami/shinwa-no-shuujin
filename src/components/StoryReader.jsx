@@ -19,6 +19,21 @@ const ESTADO_CAPITULO_LABEL = {
   pendiente_revision: "En revisión",
 };
 
+// Texto pegado desde Word/Docs suele traer un salto de línea manual al
+// final de cada renglón (no cada párrafo). Como el lector respeta los
+// saltos tal cual (whitespace-pre-line), eso corta el texto siempre en el
+// mismo lugar sin importar el ancho de pantalla real. Acá tratamos un
+// salto de línea SUELTO como un espacio (para que el párrafo fluya según
+// el dispositivo), y dejamos los saltos DOBLES (separación real de
+// párrafo) intactos.
+function normalizarSaltosDeLinea(texto) {
+  if (!texto) return "";
+  return texto
+    .replace(/\r\n/g, "\n")
+    .replace(/([^\n])\n(?!\n)/g, "$1 ")
+    .replace(/\n{2,}/g, "\n\n");
+}
+
 export default function StoryReader({ story, user, onClose, onDeleted, onEdit, onViewAuthor }) {
   const [siguiendo, setSiguiendo] = useState(false);
   const [contadorSeguidores, setContadorSeguidores] = useState(null);
@@ -273,7 +288,7 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
               </p>
             )}
             <div className="text-[#d8d1e0] text-[17px] leading-[1.85] whitespace-pre-line" style={{ fontFamily: "Lora, serif" }}>
-              {capituloActual.content}
+              {normalizarSaltosDeLinea(capituloActual.content)}
             </div>
 
             {capitulos && capitulos.length > 1 && (

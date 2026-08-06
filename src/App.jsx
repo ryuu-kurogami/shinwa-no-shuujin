@@ -342,7 +342,7 @@ export default function App() {
         <>
         {tab === "archivo" && (
           <>
-            <header className="max-w-3xl mx-auto px-5 pt-10 sm:pt-14">
+            <header className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pt-10 sm:pt-14">
               <div className="flex justify-end mb-8">{authLoaded && <AuthButton user={user} />}</div>
 
               <div className="flex items-center gap-2 mb-4 text-[#7C8B63]">
@@ -382,7 +382,7 @@ export default function App() {
               </button>
             </header>
 
-            <main className="max-w-3xl mx-auto px-5 pt-10 pb-24">
+            <main className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pt-10 pb-24">
               <div className="flex items-center gap-3 mb-5">
                 <ScrollText size={16} className="text-[#7C8B63]" />
                 <h2 className="text-[#7C8B63] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
@@ -439,7 +439,7 @@ export default function App() {
               )}
             </main>
 
-            <footer className="max-w-3xl mx-auto px-5 pb-14">
+            <footer className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pb-14">
               <div className="h-px bg-[#4a3f52] mb-5" />
               <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
                 Las historias y los comentarios públicos son visibles para cualquiera que abra esta página. Los
@@ -450,7 +450,7 @@ export default function App() {
         )}
 
         {tab === "explorar" && (
-          <div className="max-w-3xl mx-auto px-5 pt-10 pb-24">
+          <div className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pt-10 pb-24">
             <h1 className="text-[#EDE6D6] text-2xl mb-6" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
               Explorar
             </h1>
@@ -579,7 +579,7 @@ export default function App() {
 
         {tab === "moderacion" && isAdmin && <ModeracionPage />}
         {tab === "adultos" && (
-          <div className="max-w-3xl mx-auto px-5 pt-10 pb-24">
+          <div className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pt-10 pb-24">
             <button
               onClick={() => setTab("explorar")}
               className="mb-8 flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"

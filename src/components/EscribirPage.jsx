@@ -48,7 +48,7 @@ export default function EscribirPage({ user, stories, onNewStory, onEdit }) {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-5 pt-10 pb-24">
+    <div className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pt-10 pb-24">
       <div className="flex items-center gap-3 mb-6">
         <Feather size={18} className="text-[#7C8B63]" />
         <h1 className="text-[#EDE6D6] text-2xl" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>

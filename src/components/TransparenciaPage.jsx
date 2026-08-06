@@ -107,7 +107,7 @@ export default function TransparenciaPage({ onBack, isAdmin }) {
   const redesConLink = REDES.filter((r) => r.url);
 
   return (
-    <div className="max-w-2xl mx-auto px-5 pt-10 sm:pt-14 pb-24">
+    <div className="max-w-2xl 2xl:max-w-3xl mx-auto px-5 pt-10 sm:pt-14 pb-24">
       <button
         onClick={onBack}
         className="mb-8 flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"

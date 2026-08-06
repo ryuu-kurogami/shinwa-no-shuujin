@@ -74,7 +74,7 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-5 pt-10 sm:pt-14 pb-24">
+    <div className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pt-10 sm:pt-14 pb-24">
       <button
         onClick={onBack}
         className="mb-8 flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
