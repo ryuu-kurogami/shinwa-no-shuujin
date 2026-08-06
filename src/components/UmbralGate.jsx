@@ -130,6 +130,14 @@ Despójate del ruido de la tierra. Prepara tu mente para la travesía.`}
             >
               Leer los términos completos
             </a>
+            {" · "}
+            <a
+              href="/privacidad"
+              className="text-[#7d7389] text-xs hover:text-[#b8afc4] transition-colors underline"
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              Política de privacidad
+            </a>
           </div>
         )}
 

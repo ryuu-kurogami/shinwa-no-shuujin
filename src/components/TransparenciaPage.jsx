@@ -16,7 +16,7 @@ import { supabase } from "../lib/supabaseClient";
 // --- Configuración que Santi puede ajustar sin tocar el resto del archivo ---
 
 // TODO Santi: poné acá la fecha real de lanzamiento del sitio.
-const FECHA_LANZAMIENTO = new Date("2026-07-30T16:35:50-03:00");
+const FECHA_LANZAMIENTO = new Date("2026-06-01T00:00:00-04:00");
 
 // Cambiá a "USD" (u otra) si las donaciones no son en guaraníes.
 const MONEDA = "₲";
@@ -315,6 +315,13 @@ export default function TransparenciaPage({ onBack, isAdmin }) {
           style={{ fontFamily: "Lora, serif" }}
         >
           Términos y Condiciones
+        </a>
+        <a
+          href="/privacidad"
+          className="text-[#7d7389] text-xs hover:text-[#b8afc4] transition-colors underline"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          Política de Privacidad
         </a>
         <span className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
           Hecho con Supabase, Vercel, Cloudinary y Cloudflare Turnstile.
