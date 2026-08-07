@@ -37,7 +37,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { token, capitulo_id, text, is_private, is_anonymous } = await req.json()
+    const { token, capitulo_id, text, is_private, is_anonymous, parent_id } = await req.json()
 
     // --- 0. Validaciones básicas de entrada ---
     if (!token || !capitulo_id || !text || typeof text !== 'string' || !text.trim()) {
@@ -115,6 +115,29 @@ if (!capitulo || capitulo.estado !== 'publicado') {
 }
 
 const story_id = capitulo.story_id
+
+// --- 3.06 Si es una respuesta, validar el comentario padre ---
+// Un solo nivel de anidado: si el padre ya es una respuesta, la nueva
+// respuesta se cuelga igual del mismo padre en el frontend, así que acá
+// solo hace falta confirmar que el padre existe y es del mismo capítulo
+// (evita mezclar respuestas entre capítulos distintos por error o manipulación).
+let parentPrivado = false
+if (parent_id) {
+  const { data: padre, error: errPadre } = await supabase
+    .from('comments')
+    .select('capitulo_id, is_private')
+    .eq('id', parent_id)
+    .maybeSingle()
+
+  if (errPadre) {
+    console.error('Error consultando comentario padre:', errPadre.message)
+    return jsonResponse({ error: 'Error interno al validar la respuesta.' }, 500)
+  }
+  if (!padre || padre.capitulo_id !== capitulo_id) {
+    return jsonResponse({ error: 'Ese comentario ya no está disponible.' }, 400)
+  }
+  parentPrivado = !!padre.is_private
+}
     // --- 3.1 Bloquear si el usuario tiene un baneo vigente ---
     const { data: isBanned, error: errBaneo } = await supabase.rpc('is_baneado', { p_user_id: verifiedUserId })
     if (errBaneo) {
@@ -181,8 +204,9 @@ const story_id = capitulo.story_id
     const { data, error } = await supabase.from('comments').insert({
       story_id,
       capitulo_id,
+      parent_id: parent_id || null,
       text: text.trim(),
-      is_private: !!is_private,
+      is_private: !!is_private || parentPrivado,
       commenter_name: safeCommenterName,
       user_id: verifiedUserId, // NUNCA el user_id que venga del body
       ip_address: ip !== 'desconocida' ? ip : null,
