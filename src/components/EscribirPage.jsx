@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Feather, Plus, Pencil, BookPlus, ScrollText } from "lucide-react";
+import { Feather, Plus, Pencil, BookPlus, ScrollText, ChevronDown, ChevronUp } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import { supabase } from "../lib/supabaseClient";
 import PublicarCapituloModal from "./PublicarCapituloModal";
+import { contarPalabras } from "../utils/textoStats";
 
 const ESTADO_PUBLICACION_LABEL = {
   en_emision: "En emisión",
@@ -10,13 +11,25 @@ const ESTADO_PUBLICACION_LABEL = {
   finalizado: "Finalizado",
 };
 
+const ESTADO_CAPITULO_LABEL = {
+  borrador: "Borrador",
+  pendiente_revision: "En revisión",
+};
+
+function nombreCapitulo(c) {
+  // Si el autor le puso un nombre propio (ej. "Prólogo"), ese nombre
+  // reemplaza al "Capítulo N" — no se concatenan los dos.
+  return c.titulo || `Capítulo ${c.numero}`;
+}
+
 export default function EscribirPage({ user, stories, onNewStory, onEdit }) {
   const misObras = (stories || []).filter((s) => s.author_id === user.id);
   const borradores = misObras.filter((s) => s.estado === "borrador");
   const obrasEnMarcha = misObras.filter((s) => s.estado !== "borrador");
 
   const [misCapitulos, setMisCapitulos] = useState(null);
-  const [modalCapitulo, setModalCapitulo] = useState(null); // { story, editingCapitulo? }
+  const [modalCapitulo, setModalCapitulo] = useState(null); // { story, editingCapitulo?, siguienteNumero? }
+  const [obraExpandida, setObraExpandida] = useState(null);
 
   const cargarCapitulos = useCallback(async () => {
     const idsObras = misObras.map((s) => s.id);
@@ -43,8 +56,14 @@ export default function EscribirPage({ user, stories, onNewStory, onEdit }) {
     setModalCapitulo({ story, siguienteNumero });
   };
 
+  // Editar un capítulo ya existente, esté publicado, en revisión o en
+  // borrador — antes solo se podía si estaba en borrador.
   const abrirEditarCapitulo = (story, capitulo) => {
     setModalCapitulo({ story, editingCapitulo: capitulo });
+  };
+
+  const toggleExpandir = (storyId) => {
+    setObraExpandida((actual) => (actual === storyId ? null : storyId));
   };
 
   return (
@@ -81,38 +100,81 @@ export default function EscribirPage({ user, stories, onNewStory, onEdit }) {
         <div className="space-y-3 mb-10">
           {obrasEnMarcha.map((s) => {
             const caps = capitulosDe(s.id);
+            const expandida = obraExpandida === s.id;
+            const palabrasTotales = caps.reduce((sum, c) => sum + contarPalabras(c.content), 0);
             return (
-              <div
-                key={s.id}
-                className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-4 flex gap-4 items-center"
-              >
-                <StorySeal fraseIconica={s.frase_iconica || s.span} portadaUrl={s.portada_url} />
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-[#EDE6D6] text-base leading-snug mb-1" style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}>
-                    {s.title}
-                  </h3>
-                  <div className="flex items-center gap-2 text-xs text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>
-                    <span>{misCapitulos === null ? "…" : `${caps.length} capítulo${caps.length !== 1 ? "s" : ""}`}</span>
-                    <span>·</span>
-                    <span>{ESTADO_PUBLICACION_LABEL[s.estado_publicacion] || "En emisión"}</span>
+              <div key={s.id} className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80">
+                <div className="p-4 flex gap-4 items-center">
+                  <StorySeal fraseIconica={s.frase_iconica || s.span} portadaUrl={s.portada_url} />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-[#EDE6D6] text-base leading-snug mb-1" style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}>
+                      {s.title}
+                    </h3>
+                    <div className="flex items-center gap-2 text-xs text-[#7d7389] flex-wrap" style={{ fontFamily: "Lora, serif" }}>
+                      <span>{misCapitulos === null ? "…" : `${caps.length} capítulo${caps.length !== 1 ? "s" : ""}`}</span>
+                      <span>·</span>
+                      <span>{ESTADO_PUBLICACION_LABEL[s.estado_publicacion] || "En emisión"}</span>
+                      {misCapitulos !== null && palabrasTotales > 0 && (
+                        <>
+                          <span>·</span>
+                          <span>{palabrasTotales.toLocaleString("es")} palabras</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <button
+                      onClick={() => onEdit(s)}
+                      className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#b8afc4] transition-colors text-xs"
+                      style={{ fontFamily: "Lora, serif" }}
+                    >
+                      <Pencil size={12} /> Datos
+                    </button>
+                    <button
+                      onClick={() => abrirNuevoCapitulo(s)}
+                      className="flex items-center gap-1.5 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-xs"
+                      style={{ fontFamily: "Lora, serif" }}
+                    >
+                      <BookPlus size={12} /> Agregar capítulo
+                    </button>
+                    <button
+                      onClick={() => toggleExpandir(s.id)}
+                      className="flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-xs"
+                      style={{ fontFamily: "Lora, serif" }}
+                    >
+                      {expandida ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      {expandida ? "Ocultar capítulos" : "Ver capítulos"}
+                    </button>
                   </div>
                 </div>
-                <div className="flex flex-col gap-2 shrink-0">
-                  <button
-                    onClick={() => onEdit(s)}
-                    className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#b8afc4] transition-colors text-xs"
-                    style={{ fontFamily: "Lora, serif" }}
-                  >
-                    <Pencil size={12} /> Datos
-                  </button>
-                  <button
-                    onClick={() => abrirNuevoCapitulo(s)}
-                    className="flex items-center gap-1.5 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-xs"
-                    style={{ fontFamily: "Lora, serif" }}
-                  >
-                    <BookPlus size={12} /> Agregar capítulo
-                  </button>
-                </div>
+
+                {expandida && (
+                  <div className="border-t border-[#4a3f52] px-4 py-3 space-y-1.5">
+                    {caps.length === 0 ? (
+                      <p className="text-[#7d7389] text-xs italic" style={{ fontFamily: "Lora, serif" }}>
+                        Todavía no hay capítulos cargados.
+                      </p>
+                    ) : (
+                      caps.map((c) => (
+                        <div key={c.id} className="flex items-center justify-between gap-3 py-1">
+                          <p className="text-[#c9c1d4] text-sm min-w-0 truncate" style={{ fontFamily: "Lora, serif" }}>
+                            {nombreCapitulo(c)}
+                            {ESTADO_CAPITULO_LABEL[c.estado] && (
+                              <span className="text-[#B08D57] text-xs ml-2">({ESTADO_CAPITULO_LABEL[c.estado]})</span>
+                            )}
+                          </p>
+                          <button
+                            onClick={() => abrirEditarCapitulo(s, c)}
+                            className="flex items-center gap-1 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-xs shrink-0"
+                            style={{ fontFamily: "Lora, serif" }}
+                          >
+                            <Pencil size={11} /> Editar
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -139,8 +201,7 @@ export default function EscribirPage({ user, stories, onNewStory, onEdit }) {
                   className="w-full text-left rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 hover:bg-[#241d2c] transition-colors p-4"
                 >
                   <p className="text-[#EDE6D6] text-sm" style={{ fontFamily: "Lora, serif" }}>
-                    <strong>{obra.title}</strong> — capítulo {c.numero}
-                    {c.titulo ? `: ${c.titulo}` : ""}
+                    <strong>{obra.title}</strong> — {nombreCapitulo(c)}
                   </p>
                   <span className="flex items-center gap-1.5 text-[#7C8B63] text-xs mt-1" style={{ fontFamily: "Lora, serif" }}>
                     <Pencil size={11} /> Continuar escribiendo

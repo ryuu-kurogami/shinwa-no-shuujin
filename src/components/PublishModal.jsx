@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { X, Feather, ImagePlus, ShieldAlert } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./AgeGate";
+import { contarPalabras, contarCaracteres } from "../utils/textoStats";
 
 const CLOUDINARY_CLOUD_NAME = "ahwle70d";
 const CLOUDINARY_UPLOAD_PRESET = "shinwa_portadas";
@@ -28,6 +29,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
   const [tagsInput, setTagsInput] = useState((editingStory?.tags || []).join(", "));
   const [excerpt, setExcerpt] = useState(editingStory?.excerpt || "");
   const [content, setContent] = useState("");
+  const [tituloCapitulo, setTituloCapitulo] = useState("");
   const [portadaUrl, setPortadaUrl] = useState(editingStory?.portada_url || "");
   const [esAdulto, setEsAdulto] = useState(editingStory?.es_adulto || false);
   const [declaracion18, setDeclaracion18] = useState(editingStory?.declaracion_18_ok || false);
@@ -47,13 +49,16 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
     if (!editingStory) return;
     supabase
       .from("capitulos")
-      .select("id, content, estado")
+      .select("id, content, titulo, estado")
       .eq("story_id", editingStory.id)
       .eq("numero", 1)
       .maybeSingle()
       .then(({ data }) => {
         setCapituloUno(data);
-        if (data?.estado === "borrador") setContent(data.content || "");
+        if (data?.estado === "borrador") {
+          setContent(data.content || "");
+          setTituloCapitulo(data.titulo || "");
+        }
         setCargandoCapitulo(false);
       });
   }, [editingStory]);
@@ -164,7 +169,13 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
 
         const { error: errCapitulo } = await supabase
           .from("capitulos")
-          .insert({ story_id: nuevaHistoria.id, numero: 1, content: content.trim(), estado: estadoFinal });
+          .insert({
+            story_id: nuevaHistoria.id,
+            numero: 1,
+            titulo: tituloCapitulo.trim() || null,
+            content: content.trim(),
+            estado: estadoFinal,
+          });
         if (errCapitulo) {
           // No dejamos una historia fantasma sin ningún capítulo.
           await supabase.from("stories").delete().eq("id", nuevaHistoria.id);
@@ -186,7 +197,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
 
         const { error: errCapitulo } = await supabase
           .from("capitulos")
-          .update({ content: content.trim(), estado: estadoFinal })
+          .update({ titulo: tituloCapitulo.trim() || null, content: content.trim(), estado: estadoFinal })
           .eq("id", capituloUno.id);
         if (errCapitulo) throw errCapitulo;
 
@@ -415,6 +426,17 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
           {mostrarEditorDeTexto && (
             <div>
               <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
+                Nombre del capítulo 1 (opcional)
+              </label>
+              <input
+                value={tituloCapitulo}
+                onChange={(e) => setTituloCapitulo(e.target.value)}
+                className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57] mb-4"
+                style={{ fontFamily: "Fraunces, serif" }}
+                placeholder='ej. Prólogo — vacío se muestra como "Capítulo 1"'
+              />
+
+              <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
                 Texto del capítulo 1
               </label>
               <textarea
@@ -425,6 +447,9 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
                 style={{ fontFamily: "Lora, serif" }}
                 placeholder="El manto pesaba como plomo fundido..."
               />
+              <p className="text-[#7d7389] text-xs mt-1.5" style={{ fontFamily: "Lora, serif" }}>
+                {contarPalabras(content).toLocaleString("es")} palabras · {contarCaracteres(content).toLocaleString("es")} caracteres
+              </p>
             </div>
           )}
 

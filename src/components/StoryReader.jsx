@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag, ChevronLeft, ChevronRight, BookOpen } from "lucide-react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag, ChevronLeft, ChevronRight, BookOpen, Clock3 } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
 import { supabase, ADMIN_EMAILS, signInWithGoogle } from "../lib/supabaseClient";
 import ReportModal from "./ReportModal";
+import { contarPalabras, tiempoLecturaMinutos } from "../utils/textoStats";
 
 const ESTADO_PUBLICACION_LABEL = {
   en_emision: "En emisión",
@@ -40,6 +41,8 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
   const [reportando, setReportando] = useState(false);
   const [capitulos, setCapitulos] = useState(null);
   const [capituloActualId, setCapituloActualId] = useState(null);
+  const [progresoLectura, setProgresoLectura] = useState(0);
+  const contenedorRef = useRef(null);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -68,6 +71,25 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
 
   const capituloActual = capitulos?.find((c) => c.id === capituloActualId) || null;
   const indiceActual = capitulos ? capitulos.findIndex((c) => c.id === capituloActualId) : -1;
+
+  // Progreso de lectura del capítulo actual, medido sobre el contenedor que
+  // scrollea (no la ventana, porque el lector es un overlay fixed propio).
+  // Al cambiar de capítulo, arrancamos siempre desde arriba.
+  useEffect(() => {
+    const el = contenedorRef.current;
+    if (!el) return;
+    el.scrollTo(0, 0);
+    setProgresoLectura(0);
+
+    const onScroll = () => {
+      const maximo = el.scrollHeight - el.clientHeight;
+      setProgresoLectura(maximo > 0 ? Math.min(100, (el.scrollTop / maximo) * 100) : 0);
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [capituloActualId]);
+
+  const palabrasTotales = (capitulos || []).reduce((sum, c) => sum + contarPalabras(c.content), 0);
 
   // Cuenta la lectura solo si se quedó al menos 10s en el capítulo, y una
   // sola vez por capítulo por sesión de navegador (sessionStorage) — evita
@@ -157,7 +179,8 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
     capitulos && indiceActual < capitulos.length - 1 && setCapituloActualId(capitulos[indiceActual + 1].id);
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm overflow-y-auto">
+    <div ref={contenedorRef} className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm overflow-y-auto">
+      <div className="fixed top-0 left-0 h-[3px] bg-[#B08D57] z-[60] transition-[width] duration-150" style={{ width: `${progresoLectura}%` }} />
       <div className="max-w-2xl mx-auto px-5 py-10 sm:py-16">
         <div className="flex items-center justify-between mb-8">
           <button
@@ -232,6 +255,9 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
             <span className="text-[#7d7389]/70 inline-flex items-center gap-1 ml-1">
               · <Eye size={12} className="inline" /> {story.lecturas || 0}
             </span>
+            {palabrasTotales > 0 && (
+              <span className="text-[#7d7389]/70"> · {palabrasTotales.toLocaleString("es")} palabras</span>
+            )}
           </p>
           {user?.id !== story.author_id && (
             <button
@@ -277,11 +303,14 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
           <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>Cargando capítulo...</p>
         ) : (
           <>
-            {capituloActual.titulo && (
-              <h2 className="text-[#e8c9a3] text-xl mb-4" style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}>
-                Capítulo {capituloActual.numero}: {capituloActual.titulo}
+            {(capituloActual.titulo || (capitulos && capitulos.length > 1)) && (
+              <h2 className="text-[#e8c9a3] text-xl mb-1" style={{ fontFamily: "Fraunces, serif", fontWeight: 600 }}>
+                {capituloActual.titulo || `Capítulo ${capituloActual.numero}`}
               </h2>
             )}
+            <p className="flex items-center gap-1 text-[#7d7389] text-xs mb-4" style={{ fontFamily: "Lora, serif" }}>
+              <Clock3 size={11} /> ≈ {tiempoLecturaMinutos(capituloActual.content)} min de lectura
+            </p>
             {capituloActual.estado !== "publicado" && (
               <p className="text-[#B08D57] text-xs uppercase tracking-wide mb-4" style={{ fontFamily: "Lora, serif" }}>
                 {ESTADO_CAPITULO_LABEL[capituloActual.estado] || capituloActual.estado} — solo vos y el admin pueden ver esto

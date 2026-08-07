@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { X, Feather, ShieldAlert } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { contarPalabras, contarCaracteres } from "../utils/textoStats";
 
 // story: la obra a la que pertenece (necesita id y es_adulto)
 // editingCapitulo: si viene, se edita ese capítulo en vez de crear uno nuevo
@@ -74,14 +75,14 @@ export default function PublicarCapituloModal({ story, editingCapitulo, siguient
         <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
           <div>
             <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Título del capítulo (opcional)
+              Nombre de este capítulo (opcional)
             </label>
             <input
               value={titulo}
               onChange={(e) => setTitulo(e.target.value)}
               className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
               style={{ fontFamily: "Fraunces, serif" }}
-              placeholder="ej. El regreso"
+              placeholder={`ej. El regreso, o Prólogo — vacío se muestra como "Capítulo ${isEditing ? editingCapitulo.numero : siguienteNumero}"`}
             />
           </div>
 
@@ -97,6 +98,9 @@ export default function PublicarCapituloModal({ story, editingCapitulo, siguient
               style={{ fontFamily: "Lora, serif" }}
               placeholder="El capítulo continúa..."
             />
+            <p className="text-[#7d7389] text-xs mt-1.5" style={{ fontFamily: "Lora, serif" }}>
+              {contarPalabras(content).toLocaleString("es")} palabras · {contarCaracteres(content).toLocaleString("es")} caracteres
+            </p>
           </div>
 
           {story.es_adulto && (
