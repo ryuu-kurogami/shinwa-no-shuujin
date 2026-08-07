@@ -28,7 +28,14 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
 
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
   const isStoryAuthor = user && user.id === storyAuthorId;
-  const canSeePrivate = (c) => isAdmin || isStoryAuthor || (user && c.user_id === user.id);
+  // "padre" solo aplica cuando c es una respuesta — quien escribió el
+  // comentario original también tiene que poder ver la respuesta privada
+  // que le llegó, no solo el autor de la obra o el admin.
+  const canSeePrivate = (c, padre) =>
+    isAdmin ||
+    isStoryAuthor ||
+    (user && c.user_id === user.id) ||
+    (padre && user && padre.user_id === user.id);
 
   // Trae las respuestas (parent_id no nulo) de un lote de comentarios padre,
   // y las agrupa por padre.
@@ -339,7 +346,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
           {comments
             .filter((c) => !c.is_private || canSeePrivate(c))
             .map((c) => {
-              const respuestas = (respuestasPorPadre[c.id] || []).filter((r) => !r.is_private || canSeePrivate(r));
+              const respuestas = (respuestasPorPadre[c.id] || []).filter((r) => !r.is_private || canSeePrivate(r, c));
               return (
                 <li
                   key={c.id}
