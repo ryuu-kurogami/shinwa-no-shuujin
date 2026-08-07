@@ -66,7 +66,9 @@ export default function PublicarCapituloModal({ story, editingCapitulo, siguient
 
         <h2 className="text-[#EDE6D6] text-2xl mb-1 flex items-center gap-2" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
           <Feather size={22} className="text-[#7C8B63]" />{" "}
-          {isEditing ? `Editar capítulo ${editingCapitulo.numero}` : `Nuevo capítulo ${siguienteNumero}`}
+          {isEditing
+            ? `Editar ${editingCapitulo.titulo || `capítulo ${editingCapitulo.numero}`}`
+            : `Nuevo capítulo ${siguienteNumero}`}
         </h2>
         <p className="text-[#7d7389] text-sm mb-6" style={{ fontFamily: "Lora, serif" }}>
           {story.title}

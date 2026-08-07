@@ -50,6 +50,17 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Mientras el lector está abierto, el fondo (Archivo/Explorar detrás) no
+  // debería poder scrollearse por separado — si no, aparecen dos barras de
+  // scroll independientes y el fondo se nota "moviéndose" detrás del blur.
+  useEffect(() => {
+    const overflowOriginal = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = overflowOriginal;
+    };
+  }, []);
+
   // Carga la lista de capítulos de esta obra (RLS ya filtra: un lector
   // cualquiera solo ve los publicados; el autor/admin ven todos, incluidos
   // borradores y los que están en revisión).
@@ -179,8 +190,12 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
     capitulos && indiceActual < capitulos.length - 1 && setCapituloActualId(capitulos[indiceActual + 1].id);
 
   return (
-    <div ref={contenedorRef} className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm overflow-y-auto">
-      <div className="fixed top-0 left-0 h-[3px] bg-[#B08D57] z-[60] transition-[width] duration-150" style={{ width: `${progresoLectura}%` }} />
+    <>
+      <div
+        className="fixed top-0 left-0 h-[3px] bg-[#B08D57] z-[70] transition-[width] duration-150"
+        style={{ width: `${progresoLectura}%` }}
+      />
+      <div ref={contenedorRef} className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm overflow-y-auto">
       <div className="max-w-2xl mx-auto px-5 py-10 sm:py-16">
         <div className="flex items-center justify-between mb-8">
           <button
@@ -349,6 +364,7 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
       {reportando && (
         <ReportModal user={user} historiaId={story.id} onClose={() => setReportando(false)} />
       )}
-    </div>
+      </div>
+    </>
   );
 }
