@@ -3,6 +3,7 @@ import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart, Cl
 import { StorySeal } from "./StoryCard";
 import { supabase } from "../lib/supabaseClient";
 import EditProfileModal from "./EditProfileModal";
+import ResponderDisputaModal from "./ResponderDisputaModal";
 
 const CATEGORIA_LABEL = { corto: "Corto", novela: "Novela", fanfic: "Fanfic" };
 
@@ -28,6 +29,8 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
   const misHistorias = (stories || []).filter((s) => s.author_id === user.id);
   const [siguiendo, setSiguiendo] = useState([]);
   const [profile, setProfile] = useState(null);
+  const [disputasPorHistoria, setDisputasPorHistoria] = useState({});
+  const [respondiendoDisputa, setRespondiendoDisputa] = useState(null);
   const [editandoPerfil, setEditandoPerfil] = useState(false);
   const [solicitandoBorrado, setSolicitandoBorrado] = useState(false);
 
@@ -47,6 +50,31 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
       .eq("seguidor_id", user.id)
       .then(({ data }) => setSiguiendo(data || []));
   }, [user.id]);
+
+  // Disputas de plagio contra mis propias historias, todavía sin mi
+  // respuesta (RLS solo deja ver las que son motivo='plagio_interno' y
+  // apuntan a una historia mía).
+  useEffect(() => {
+    const idsPropios = misHistorias.map((s) => s.id);
+    if (idsPropios.length === 0) {
+      setDisputasPorHistoria({});
+      return;
+    }
+    supabase
+      .from("reportes")
+      .select("id, historia_id, evidencia, evidencia_acusado")
+      .eq("motivo", "plagio_interno")
+      .eq("estado", "pendiente")
+      .in("historia_id", idsPropios)
+      .then(({ data }) => {
+        const mapa = {};
+        (data || []).forEach((r) => {
+          if (!r.evidencia_acusado) mapa[r.historia_id] = r;
+        });
+        setDisputasPorHistoria(mapa);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stories, user.id]);
 
   // Nombres de los autores que sigue, tomados de sus propias historias ya
   // cargadas (evita una consulta nueva por cada autor)
@@ -209,6 +237,17 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
                     {s.title}
                   </h3>
                 </button>
+
+                {disputasPorHistoria[s.id] && (
+                  <button
+                    onClick={() => setRespondiendoDisputa({ ...disputasPorHistoria[s.id], title: s.title })}
+                    className="flex items-center gap-1.5 text-[#e08a8a] hover:text-[#f0a8a8] transition-colors text-xs mb-2"
+                    style={{ fontFamily: "Lora, serif" }}
+                  >
+                    <UserX size={12} /> Tenés una disputa de plagio pendiente — Responder
+                  </button>
+                )}
+
                 <div className="flex items-center gap-2 text-xs text-[#7d7389] mb-3 flex-wrap" style={{ fontFamily: "Lora, serif" }}>
                   <span className="uppercase tracking-wide text-[#7C8B63]">
                     {CATEGORIA_LABEL[s.categoria] || "Corto"}
@@ -257,6 +296,20 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
           profile={profile}
           onClose={() => setEditandoPerfil(false)}
           onSaved={(nuevoProfile) => setProfile(nuevoProfile)}
+        />
+      )}
+
+      {respondiendoDisputa && (
+        <ResponderDisputaModal
+          disputa={respondiendoDisputa}
+          onClose={() => setRespondiendoDisputa(null)}
+          onSaved={() =>
+            setDisputasPorHistoria((prev) => {
+              const copia = { ...prev };
+              delete copia[respondiendoDisputa.historia_id];
+              return copia;
+            })
+          }
         />
       )}
 

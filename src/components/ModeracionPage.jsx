@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { ShieldAlert, Trash2, Ban, CheckCircle2, ExternalLink, Clock3, Search, UserX, Eye } from "lucide-react";
+import { ShieldAlert, Trash2, Ban, CheckCircle2, ExternalLink, Clock3, Search, UserX, Eye, Coins, Plus } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const MOTIVO_LABEL = {
@@ -42,6 +42,9 @@ export default function ModeracionPage() {
   const [busqueda, setBusqueda] = useState("");
   const [resultadosBusqueda, setResultadosBusqueda] = useState(null);
   const [buscando, setBuscando] = useState(false);
+  const [fondos, setFondos] = useState(null);
+  const [nuevoFondo, setNuevoFondo] = useState({ tipo: "ingreso", monto: "", descripcion: "" });
+  const [guardandoFondo, setGuardandoFondo] = useState(false);
   const [err, setErr] = useState("");
 
   const cargar = useCallback(async () => {
@@ -167,11 +170,26 @@ export default function ModeracionPage() {
     setBaneados(data || []);
   }, []);
 
+  const cargarFondos = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("fondos_sitio")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      setErr("No se pudo cargar los fondos del sitio.");
+      return;
+    }
+    setFondos(data || []);
+  }, []);
+
   useEffect(() => {
     cargar();
     cargarEnRevision();
     cargarBaneados();
-  }, [cargar, cargarEnRevision, cargarBaneados]);
+    cargarFondos();
+  }, [cargar, cargarEnRevision, cargarBaneados, cargarFondos]);
 
   const marcarResuelto = async (id) => {
     await supabase.from("reportes").update({ estado: "resuelto" }).eq("id", id);
@@ -248,6 +266,29 @@ export default function ModeracionPage() {
       .limit(10);
     setResultadosBusqueda(data || []);
     setBuscando(false);
+  };
+
+  const agregarFondo = async (e) => {
+    e.preventDefault();
+    const monto = parseFloat(nuevoFondo.monto);
+    if (!monto || monto <= 0 || !nuevoFondo.descripcion.trim()) return;
+    setGuardandoFondo(true);
+    const { error } = await supabase.from("fondos_sitio").insert({
+      tipo: nuevoFondo.tipo,
+      monto,
+      descripcion: nuevoFondo.descripcion.trim(),
+    });
+    setGuardandoFondo(false);
+    if (!error) {
+      setNuevoFondo({ tipo: "ingreso", monto: "", descripcion: "" });
+      cargarFondos();
+    }
+  };
+
+  const borrarFondo = async (id) => {
+    if (!window.confirm("¿Borrar esta entrada? Afecta los totales públicos en Transparencia.")) return;
+    await supabase.from("fondos_sitio").delete().eq("id", id);
+    cargarFondos();
   };
 
   if (reportes === null) {
@@ -332,8 +373,14 @@ export default function ModeracionPage() {
                 )}
 
                 {r.evidencia && (
+                  <p className="text-[#b8afc4] text-xs mb-1" style={{ fontFamily: "Lora, serif" }}>
+                    <strong className="text-[#7d7389]">Evidencia de quien reportó:</strong> {r.evidencia}
+                  </p>
+                )}
+                {r.motivo === "plagio_interno" && (
                   <p className="text-[#b8afc4] text-xs mb-3" style={{ fontFamily: "Lora, serif" }}>
-                    Evidencia: {r.evidencia}
+                    <strong className="text-[#7d7389]">Evidencia del acusado:</strong>{" "}
+                    {r.evidencia_acusado || <span className="italic text-[#7d7389]">todavía no respondió</span>}
                   </p>
                 )}
 
@@ -486,6 +533,89 @@ export default function ModeracionPage() {
         <div className="space-y-2">
           {baneados.map((u) => (
             <FilaUsuarioBaneado key={u.id} usuario={u} onQuitarBaneo={quitarBaneo} />
+          ))}
+        </div>
+      )}
+
+      {/* ---------- Fondos del sitio ---------- */}
+      <div className="flex items-center gap-2 mb-4 mt-10">
+        <Coins size={13} className="text-[#B08D57]" />
+        <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Fondos del sitio
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+      <p className="text-[#7d7389] text-xs mb-4" style={{ fontFamily: "Lora, serif" }}>
+        Esto alimenta los totales públicos que se ven en /transparencia. Usá "ingreso" para donaciones
+        recibidas y "gasto" para en qué se usaron.
+      </p>
+
+      <form onSubmit={agregarFondo} className="flex flex-wrap gap-2 mb-4">
+        <select
+          value={nuevoFondo.tipo}
+          onChange={(e) => setNuevoFondo((f) => ({ ...f, tipo: e.target.value }))}
+          className="bg-[#1d1824] border border-[#4a3f52] rounded-sm px-2.5 py-2 text-sm text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          <option value="ingreso">Ingreso</option>
+          <option value="gasto">Gasto</option>
+        </select>
+        <input
+          type="number"
+          min="0.01"
+          step="0.01"
+          value={nuevoFondo.monto}
+          onChange={(e) => setNuevoFondo((f) => ({ ...f, monto: e.target.value }))}
+          placeholder="Monto"
+          className="w-28 bg-[#1d1824] border border-[#4a3f52] rounded-sm px-2.5 py-2 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+          style={{ fontFamily: "Lora, serif" }}
+        />
+        <input
+          value={nuevoFondo.descripcion}
+          onChange={(e) => setNuevoFondo((f) => ({ ...f, descripcion: e.target.value }))}
+          placeholder="Descripción (ej. donación de un lector, hosting del mes)"
+          className="flex-1 min-w-[180px] bg-[#1d1824] border border-[#4a3f52] rounded-sm px-2.5 py-2 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+          style={{ fontFamily: "Lora, serif" }}
+        />
+        <button
+          type="submit"
+          disabled={guardandoFondo || !nuevoFondo.monto || !nuevoFondo.descripcion.trim()}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-40 transition-colors text-sm text-[#EDE6D6]"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          <Plus size={14} /> Agregar
+        </button>
+      </form>
+
+      {fondos === null ? (
+        <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
+      ) : fondos.length === 0 ? (
+        <p className="text-[#7d7389] italic" style={{ fontFamily: "Lora, serif" }}>
+          Todavía no hay entradas cargadas.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {fondos.map((f) => (
+            <div key={f.id} className="flex items-center justify-between gap-3 rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 px-3.5 py-2.5">
+              <div className="min-w-0 flex-1 flex items-center gap-2">
+                <span
+                  className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0 ${
+                    f.tipo === "ingreso" ? "bg-[#7C8B63]/20 text-[#c3d1a8]" : "bg-[#7A2E2E]/20 text-[#e08a8a]"
+                  }`}
+                >
+                  {f.tipo}
+                </span>
+                <p className="text-[#c9c1d4] text-sm truncate" style={{ fontFamily: "Lora, serif" }}>
+                  {f.descripcion} — {Number(f.monto).toLocaleString("es-PY")}
+                </p>
+              </div>
+              <button
+                onClick={() => borrarFondo(f.id)}
+                className="text-[#7d7389] hover:text-[#e08a8a] transition-colors shrink-0"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
           ))}
         </div>
       )}
