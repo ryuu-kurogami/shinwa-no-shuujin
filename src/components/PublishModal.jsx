@@ -298,6 +298,12 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
                 </button>
               ))}
             </div>
+            {categoria === "fanfic" && (
+              <p className="text-[#7d7389] text-xs mt-2" style={{ fontFamily: "Lora, serif" }}>
+                Al publicar contenido de fanfic, tu opción de apoyo económico queda desactivada mientras esta
+                obra exista (Términos, Sección 5.3).
+              </p>
+            )}
           </div>
 
           <div>
@@ -364,6 +370,7 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
                 </label>
                 <p className="text-[#7d7389] text-xs mt-2" style={{ fontFamily: "Lora, serif" }}>
                   Cada capítulo nuevo de una obra +18 pasa por revisión antes de quedar visible (Sección 4.5).
+                  Además, tu opción de apoyo económico queda desactivada mientras esta obra exista.
                 </p>
               </div>
             )}

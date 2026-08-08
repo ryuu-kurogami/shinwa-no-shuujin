@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { X, ImagePlus, Save } from "lucide-react";
+import { X, ImagePlus, Save, Heart } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { validarUsername } from "../utils/forbiddenUsernames";
 
 const CLOUDINARY_CLOUD_NAME = "ahwle70d";
 const CLOUDINARY_UPLOAD_PRESET = "shinwa_portadas";
@@ -9,6 +10,7 @@ export default function EditProfileModal({ user, profile, onClose, onSaved }) {
   const [username, setUsername] = useState(profile?.username || "");
   const [bio, setBio] = useState(profile?.bio || "");
   const [linkDonacion, setLinkDonacion] = useState(profile?.link_donacion || "");
+  const [linkDonacion2, setLinkDonacion2] = useState(profile?.link_donacion_2 || "");
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -57,19 +59,34 @@ export default function EditProfileModal({ user, profile, onClose, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!username.trim()) {
+    const limpio = username.trim();
+    if (!limpio) {
       setErr("El nombre de usuario es obligatorio.");
       return;
     }
+
+    // Solo corremos la validación de formato/reservados/groserías si el
+    // username realmente cambió — si no, es la misma cadena que ya pasó
+    // este chequeo antes (o una cuenta vieja de antes de que existiera).
+    const usernameCambio = limpio !== (profile?.username || "");
+    if (usernameCambio) {
+      const resultado = validarUsername(limpio);
+      if (!resultado.valid) {
+        setErr(resultado.error);
+        return;
+      }
+    }
+
     setSaving(true);
     setErr("");
     try {
       const { data, error } = await supabase
         .from("profiles")
         .update({
-          username: username.trim(),
+          username: limpio,
           bio: bio.trim().slice(0, 300) || null,
           link_donacion: linkDonacion.trim() || null,
+          link_donacion_2: linkDonacion2.trim() || null,
           avatar_url: avatarUrl || null,
         })
         .eq("id", user.id)
@@ -80,11 +97,15 @@ export default function EditProfileModal({ user, profile, onClose, onSaved }) {
       onSaved(data);
       onClose();
     } catch (error) {
-      setErr(
-        error.code === "23505"
-          ? "Ese nombre de usuario ya está en uso."
-          : "No se pudo guardar. Probá de nuevo."
-      );
+      if (error.code === "23505") {
+        setErr("Ese nombre de usuario ya está en uso.");
+      } else if (usernameCambio && error.message) {
+        // Cooldown de 30 días, reservados o groserías detectadas por el
+        // trigger de la base — el mensaje ya viene en español.
+        setErr(error.message);
+      } else {
+        setErr("No se pudo guardar. Probá de nuevo.");
+      }
     } finally {
       setSaving(false);
     }
@@ -161,17 +182,32 @@ export default function EditProfileModal({ user, profile, onClose, onSaved }) {
           </div>
 
           <div>
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Link de donación (opcional)
+            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5 flex items-center gap-1.5" style={{ fontFamily: "Lora, serif" }}>
+              <Heart size={12} /> Link para que te apoyen (opcional)
             </label>
             <input
               value={linkDonacion}
               onChange={(e) => setLinkDonacion(e.target.value)}
               type="url"
+              className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57] mb-2"
+              style={{ fontFamily: "Lora, serif" }}
+              placeholder="https://ko-fi.com/tuusuario"
+            />
+            <input
+              value={linkDonacion2}
+              onChange={(e) => setLinkDonacion2(e.target.value)}
+              type="url"
               className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
               style={{ fontFamily: "Lora, serif" }}
-              placeholder="https://paypal.me/tuusuario"
+              placeholder="Un segundo link, opcional (ej. otra plataforma)"
             />
+            {profile?.apoyo_habilitado === false && (
+              <p className="text-[#B08D57] text-xs mt-2 leading-relaxed" style={{ fontFamily: "Lora, serif" }}>
+                Tu opción de apoyo está desactivada mientras tengas contenido +18 o fanfic publicado (o que haya
+                estado publicado alguna vez). Podés seguir editando estos links igual — se muestran solos en
+                cuanto vuelva a estar habilitado.
+              </p>
+            )}
           </div>
 
           {err && <p className="text-[#e08a8a] text-sm">{err}</p>}

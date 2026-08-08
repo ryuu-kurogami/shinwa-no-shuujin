@@ -123,6 +123,12 @@ export default function PublicarCapituloModal({ story, editingCapitulo, siguient
             </div>
           )}
 
+          {(story.es_adulto || story.categoria === "fanfic") && (
+            <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
+              Recordatorio: tu opción de apoyo económico sigue desactivada mientras esta obra exista.
+            </p>
+          )}
+
           {err && <p className="text-[#e08a8a] text-sm">{err}</p>}
 
           <div className="flex gap-3">

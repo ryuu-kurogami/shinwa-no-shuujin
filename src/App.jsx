@@ -38,6 +38,7 @@ export default function App() {
   const [savedIds, setSavedIds] = useState(new Set());
   const [likedIds, setLikedIds] = useState(new Set());
   const [likesCountMap, setLikesCountMap] = useState({});
+  const [conteoCapitulos, setConteoCapitulos] = useState({});
   const [ordenExplorar, setOrdenExplorar] = useState("recientes"); // recientes | lecturas | likes
   const [viewingAuthorId, setViewingAuthorId] = useState(null);
   const [tab, setTab] = useState("archivo"); // archivo | explorar | biblioteca | perfil | escribir
@@ -127,9 +128,23 @@ export default function App() {
     }
   }, []);
 
+  // Cantidad de capítulos publicados por historia, para el badge en
+  // StoryCard — se recalcula del lado del cliente en vez de con una
+  // función de base, alcanza para el volumen de datos que maneja el sitio.
+  const loadConteoCapitulos = useCallback(async () => {
+    const { data, error } = await supabase.from("capitulos").select("story_id").eq("estado", "publicado");
+    if (error) return;
+    const mapa = {};
+    (data || []).forEach((c) => {
+      mapa[c.story_id] = (mapa[c.story_id] || 0) + 1;
+    });
+    setConteoCapitulos(mapa);
+  }, []);
+
   useEffect(() => {
     loadStories();
-  }, [loadStories]);
+    loadConteoCapitulos();
+  }, [loadStories, loadConteoCapitulos]);
 
   // Carga los IDs de historias guardadas por el usuario logueado
   useEffect(() => {
@@ -433,6 +448,7 @@ export default function App() {
                       isLiked={likedIds.has(s.id)}
                       likesCount={likesCountMap[s.id] || 0}
                       onToggleLike={toggleLike}
+                      capitulosCount={conteoCapitulos[s.id]}
                     />
                   ))}
                 </div>
@@ -541,6 +557,7 @@ export default function App() {
                     isLiked={likedIds.has(s.id)}
                     likesCount={likesCountMap[s.id] || 0}
                     onToggleLike={toggleLike}
+                    capitulosCount={conteoCapitulos[s.id]}
                   />
                 ))}
               </div>
@@ -614,6 +631,7 @@ export default function App() {
                     isLiked={likedIds.has(s.id)}
                     likesCount={likesCountMap[s.id] || 0}
                     onToggleLike={toggleLike}
+                    capitulosCount={conteoCapitulos[s.id]}
                   />
                 ))}
               </div>

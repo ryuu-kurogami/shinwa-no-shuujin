@@ -12,9 +12,14 @@ export default function AuthorProfile({ authorId, stories, user, onBack, onOpenS
   const authorName = historiasDelAutor[0]?.author_name || "Autor";
 
   useEffect(() => {
-    supabase.from("profiles").select("username, bio, avatar_url, link_donacion").eq("id", authorId).maybeSingle().then(({ data }) => {
-      setProfile(data);
-    });
+    supabase
+      .from("profiles")
+      .select("username, bio, avatar_url, link_donacion, link_donacion_2, apoyo_habilitado")
+      .eq("id", authorId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setProfile(data);
+      });
   }, [authorId]);
 
   useEffect(() => {
@@ -120,16 +125,31 @@ export default function AuthorProfile({ authorId, stories, user, onBack, onOpenS
         </p>
       )}
 
-      {profile?.link_donacion && (
-        <a
-          href={profile.link_donacion}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 mb-8 text-sm text-[#7A2E2E] hover:text-[#a34848] transition-colors"
-          style={{ fontFamily: "Lora, serif" }}
-        >
-          <Heart size={13} /> Apoyar a este autor
-        </a>
+      {profile?.apoyo_habilitado !== false && (profile?.link_donacion || profile?.link_donacion_2) && (
+        <div className="flex flex-wrap items-center gap-4 mb-8">
+          {profile.link_donacion && (
+            <a
+              href={profile.link_donacion}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-[#7A2E2E] hover:text-[#a34848] transition-colors"
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              <Heart size={13} /> Invitar un café al autor
+            </a>
+          )}
+          {profile.link_donacion_2 && (
+            <a
+              href={profile.link_donacion_2}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-[#7A2E2E] hover:text-[#a34848] transition-colors"
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              <Heart size={13} /> Apoyar por otra vía
+            </a>
+          )}
+        </div>
       )}
 
       <div className="flex items-center gap-3 mb-5">

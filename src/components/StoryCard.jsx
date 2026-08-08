@@ -51,7 +51,7 @@ export function StorySeal({ fraseIconica, portadaUrl }) {
   );
 }
 
-export default function StoryCard({ story, onOpen, isSaved, onToggleSave, onViewAuthor, isLiked, likesCount, onToggleLike }) {
+export default function StoryCard({ story, onOpen, isSaved, onToggleSave, onViewAuthor, isLiked, likesCount, onToggleLike, capitulosCount }) {
   return (
     <div
       className="group text-left w-full rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 hover:bg-[#241d2c] transition-colors duration-300 p-5 flex gap-4 items-start relative overflow-hidden"
@@ -127,6 +127,9 @@ export default function StoryCard({ story, onOpen, isSaved, onToggleSave, onView
               </span>
             ) : (
               story.author_name
+            )}
+            {capitulosCount > 1 && (
+              <span className="text-[#7d7389]"> · {capitulosCount} capítulos</span>
             )}
             {story.estado_publicacion === "en_pausa" && (
               <span className="text-[#B08D57]"> · en pausa</span>

@@ -37,7 +37,7 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
   useEffect(() => {
     supabase
       .from("profiles")
-      .select("username, bio, avatar_url, link_donacion, baneado_hasta")
+      .select("username, bio, avatar_url, link_donacion, link_donacion_2, apoyo_habilitado, baneado_hasta")
       .eq("id", user.id)
       .maybeSingle()
       .then(({ data }) => setProfile(data));
@@ -152,18 +152,20 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
         </p>
       )}
 
-      {profile?.link_donacion && (
-        <a
-          href={profile.link_donacion}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 mb-8 text-sm text-[#7A2E2E] hover:text-[#a34848] transition-colors"
-          style={{ fontFamily: "Lora, serif" }}
-        >
-          <Heart size={13} /> Tu link de donación está activo
-        </a>
+      {(profile?.link_donacion || profile?.link_donacion_2) && (
+        <div className="mb-8">
+          {profile.apoyo_habilitado === false ? (
+            <p className="flex items-center gap-1.5 text-sm text-[#B08D57]" style={{ fontFamily: "Lora, serif" }}>
+              <Heart size={13} /> Tu opción de apoyo está desactivada por ahora (contenido +18 o fanfic publicado)
+            </p>
+          ) : (
+            <p className="flex items-center gap-1.5 text-sm text-[#7A2E2E]" style={{ fontFamily: "Lora, serif" }}>
+              <Heart size={13} /> Tu opción de apoyo está activa
+            </p>
+          )}
+        </div>
       )}
-      {!profile?.link_donacion && <div className="mb-8" />}
+      {!profile?.link_donacion && !profile?.link_donacion_2 && <div className="mb-8" />}
 
       {tiempoRestante(profile?.baneado_hasta) && (
         <div className="flex items-center gap-2.5 mb-8 px-4 py-3 rounded-sm border border-[#7A2E2E] bg-[#7A2E2E]/10">
