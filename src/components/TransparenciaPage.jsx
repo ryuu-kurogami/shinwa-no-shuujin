@@ -16,7 +16,7 @@ import { supabase } from "../lib/supabaseClient";
 // --- Configuración que Santi puede ajustar sin tocar el resto del archivo ---
 
 // TODO Santi: poné acá la fecha real de lanzamiento del sitio.
-const FECHA_LANZAMIENTO = new Date("2026-06-01T00:00:00-04:00");
+const FECHA_LANZAMIENTO = new Date("2026-07-30T16:35:50-03:00");
 
 // Cambiá a "USD" (u otra) si las donaciones no son en guaraníes.
 const MONEDA = "₲";
