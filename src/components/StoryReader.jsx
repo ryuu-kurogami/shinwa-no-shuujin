@@ -206,15 +206,13 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
             <X size={16} /> Cerrar
           </button>
           <div className="flex items-center gap-4">
-            {user && (
-              <button
-                onClick={() => setReportando(true)}
-                className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#e08a8a] transition-colors text-sm"
-                style={{ fontFamily: "Lora, serif" }}
-              >
-                <Flag size={13} /> Reportar
-              </button>
-            )}
+            <button
+              onClick={() => setReportando(true)}
+              className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#e08a8a] transition-colors text-sm"
+              style={{ fontFamily: "Lora, serif" }}
+            >
+              <Flag size={13} /> Reportar
+            </button>
             {canEdit && (
               <button
                 onClick={() => onEdit(story)}

@@ -6,7 +6,7 @@
 export const terminosContent = {
   titulo: "Términos y Condiciones de Uso",
   subtitulo: "Shinwa no Shuujin (神話の集人)",
-  ultimaActualizacion: "5 de agosto de 2026",
+  ultimaActualizacion: "9 de agosto de 2026",
   enlaceRelacionado: { href: "/privacidad", texto: "Ver también la Política de Privacidad" },
   secciones: [
     {
@@ -56,7 +56,7 @@ export const terminosContent = {
       parrafos: [
         { numero: "5.1.", texto: "Donaciones a autores: los autores registrados pueden incluir en su perfil un enlace externo provisto por ellos mismos, a través del cual los lectores pueden realizar donaciones voluntarias como forma de apoyo. La Plataforma no procesa, gestiona ni tiene acceso a estas transacciones. El Administrador no asume ninguna responsabilidad sobre dichas transacciones." },
         { numero: "5.2.", texto: "Donaciones al Sitio: la Plataforma cuenta además con una sección de donaciones generales, destinadas exclusivamente al mantenimiento y mejora del Sitio. El Sitio publica de forma pública y actualizada (ver /transparencia) el monto total recibido, el destino de dichos fondos, y el monto que permanece reservado." },
-        { numero: "5.3.", texto: "Restricción en fanfics: las obras publicadas en la sección de fanfics no podrán incluir enlaces de donación, dado que dicho contenido se basa en propiedad intelectual de terceros y no debe utilizarse con fines de lucro." },
+        { numero: "5.3.", texto: "Restricción en fanfics y contenido +18: ningún enlace de apoyo económico puede estar activo mientras el autor tenga una obra de fanfic o marcada como contenido para mayores de edad publicada — los fanfics se basan en propiedad intelectual de terceros y no deben usarse con fines de lucro, y el contenido +18 requiere revisión previa (Sección 4.5). Esta restricción la aplica el Sitio de forma automática, y persiste aunque la obra se oculte o se pase a borrador — solo se levanta si la obra se elimina por completo. El enlace no se borra, queda guardado y se reactiva solo." },
         { numero: "5.4.", texto: "Naturaleza opcional y sin fines de lucro: tanto las donaciones a autores como las donaciones al Sitio son enteramente voluntarias y están pensadas para apoyar el contenido, no para venderlo. Queda prohibido condicionar la publicación de nuevos capítulos o contenido a algún tipo de pago dentro del Sitio. Cualquier acuerdo económico que un autor realice con lectores fuera de la Plataforma es de su exclusiva responsabilidad." },
       ],
     },
@@ -73,7 +73,7 @@ export const terminosContent = {
       encabezado: "7. Plagio y Contenido de Terceros",
       parrafos: [
         { numero: "7.1.", texto: "Disputas entre autores del Sitio: si dos autores registrados se acusan mutuamente de plagio, ambas partes deberán presentar evidencia que respalde su reclamo. El Administrador evaluará dicha evidencia y tomará una decisión final." },
-        { numero: "7.2.", texto: "Obras de autores externos a la Plataforma: cualquier persona puede reportar contenido publicado en el Sitio como una copia no autorizada de una obra externa, siempre que aporte evidencia razonable. El Administrador revisará el reporte y podrá retirar el contenido mientras dura la investigación." },
+        { numero: "7.2.", texto: "Obras de autores externos a la Plataforma: cualquier persona, tenga o no cuenta en el Sitio, puede reportar contenido publicado acá como una copia no autorizada de una obra externa, siempre que aporte evidencia razonable. Para evitar el uso indiscriminado de esta herramienta, cada reporte pasa por una verificación de captcha y tiene un límite de envíos por período de tiempo. El Administrador revisará el reporte y podrá retirar el contenido mientras dura la investigación." },
         { numero: "7.3.", texto: "El Sitio no verifica de forma proactiva la originalidad de todo el contenido publicado; actúa únicamente ante reportes con evidencia. Cada autor, al publicar, declara ser el autor original de su obra o contar con los derechos necesarios para publicarla (ver 3.3), asumiendo la responsabilidad primaria en caso de infracción." },
       ],
     },

@@ -233,7 +233,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
             <Trash2 size={13} />
           </button>
         )}
-        {user && !isAdmin && (
+        {!isAdmin && (
           <button
             onClick={() => setReportandoComentario(c.id)}
             className="ml-auto text-[#7d7389] hover:text-[#e08a8a] transition-colors"
