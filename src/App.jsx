@@ -16,6 +16,7 @@ import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./components/AgeGa
 import UsernameGate from "./components/UsernameGate";
 import TransparenciaPage from "./components/TransparenciaPage";
 import DeletionPendingGate from "./components/DeletionPendingGate";
+import SiteFooter from "./components/SiteFooter";
 
 const CATEGORIAS = [
   { value: "todos", label: "Todos" },
@@ -645,6 +646,8 @@ export default function App() {
         </>
         )}
       </div>
+
+      <SiteFooter />
 
       {openStory && (
         <StoryReader
