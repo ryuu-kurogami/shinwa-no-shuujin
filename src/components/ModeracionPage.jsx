@@ -212,6 +212,7 @@ export default function ModeracionPage() {
       alert("No se puede banear: el autor es anónimo o no se encontró.");
       return;
     }
+    const esPermanente = horas === null;
     const baneadoHasta = horas ? new Date(Date.now() + horas * 60 * 60 * 1000).toISOString() : PERMANENTE_ISO;
 
     const { data: perfilActual } = await supabase
@@ -227,6 +228,18 @@ export default function ModeracionPage() {
         infracciones: (perfilActual?.infracciones || 0) + 1,
       })
       .eq("id", authorId);
+
+    // El baneo real de Supabase Auth (bloquea el login en sí) solo se
+    // aplica al permanente — los temporales siguen siendo el mecanismo
+    // "suave" de siempre (puede seguir logueándose y leyendo).
+    if (esPermanente) {
+      const { error: errAuth } = await supabase.functions.invoke("ban-user-auth", {
+        body: { target_user_id: authorId, accion: "banear" },
+      });
+      if (errAuth) {
+        alert("El baneo se guardó en el sitio, pero falló al bloquear el login real. Revisá los logs de la función ban-user-auth.");
+      }
+    }
 
     await marcarResuelto(r.id);
     cargarBaneados();
@@ -246,8 +259,18 @@ export default function ModeracionPage() {
     cargarEnRevision();
   };
 
-  const quitarBaneo = async (userId) => {
-    await supabase.from("profiles").update({ baneado_hasta: null }).eq("id", userId);
+  const quitarBaneo = async (usuario) => {
+    await supabase.from("profiles").update({ baneado_hasta: null }).eq("id", usuario.id);
+
+    if (usuario.baneado_hasta === PERMANENTE_ISO) {
+      const { error: errAuth } = await supabase.functions.invoke("ban-user-auth", {
+        body: { target_user_id: usuario.id, accion: "desbanear" },
+      });
+      if (errAuth) {
+        alert("Se le quitó el baneo en el sitio, pero falló al reactivar el login real. Revisá los logs de la función ban-user-auth.");
+      }
+    }
+
     cargarBaneados();
     if (resultadosBusqueda) buscarUsuario();
   };
@@ -396,8 +419,15 @@ export default function ModeracionPage() {
                   {DURACIONES.map((d) => (
                     <button
                       key={d.label}
-                      onClick={() => banear(r, d.horas)}
-                      className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3] transition-colors"
+                      onClick={() => {
+                        if (d.horas === null && !window.confirm("Baneo permanente: además de bloquear publicar/comentar, esto le va a impedir volver a iniciar sesión. ¿Confirmás?")) return;
+                        banear(r, d.horas);
+                      }}
+                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border transition-colors ${
+                        d.horas === null
+                          ? "border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10"
+                          : "border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3]"
+                      }`}
                       style={{ fontFamily: "Lora, serif" }}
                     >
                       <Ban size={12} /> Banear {d.label}
@@ -646,7 +676,7 @@ function FilaUsuarioBaneado({ usuario, onQuitarBaneo }) {
         </div>
       </div>
       <button
-        onClick={() => onQuitarBaneo(usuario.id)}
+        onClick={() => onQuitarBaneo(usuario)}
         className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors"
         style={{ fontFamily: "Lora, serif" }}
       >
