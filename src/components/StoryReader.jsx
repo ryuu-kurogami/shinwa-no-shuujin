@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag, ChevronLeft, ChevronRight, BookOpen, Clock3 } from "lucide-react";
+import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag, ChevronLeft, ChevronRight, BookOpen, Clock3, BookPlus } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
 import { supabase, ADMIN_EMAILS, signInWithGoogle } from "../lib/supabaseClient";
 import ReportModal from "./ReportModal";
+import PublicarCapituloModal from "./PublicarCapituloModal";
 import { contarPalabras, tiempoLecturaMinutos } from "../utils/textoStats";
 
 const ESTADO_PUBLICACION_LABEL = {
@@ -39,6 +40,7 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
   const [siguiendo, setSiguiendo] = useState(false);
   const [contadorSeguidores, setContadorSeguidores] = useState(null);
   const [reportando, setReportando] = useState(false);
+  const [modalCapitulo, setModalCapitulo] = useState(null); // { editingCapitulo? , siguienteNumero? }
   const [capitulos, setCapitulos] = useState(null);
   const [capituloActualId, setCapituloActualId] = useState(null);
   const [progresoLectura, setProgresoLectura] = useState(0);
@@ -186,6 +188,17 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
 
   const irACapitulo = (id) => setCapituloActualId(id);
   const irAAnterior = () => indiceActual > 0 && setCapituloActualId(capitulos[indiceActual - 1].id);
+
+  const abrirNuevoCapitulo = () => {
+    const numeros = (capitulos || []).map((c) => c.numero);
+    const siguienteNumero = numeros.length > 0 ? Math.max(...numeros) + 1 : 2;
+    setModalCapitulo({ siguienteNumero });
+  };
+
+  const abrirEditarCapituloActual = () => {
+    if (!capituloActual) return;
+    setModalCapitulo({ editingCapitulo: capituloActual });
+  };
   const irASiguiente = () =>
     capitulos && indiceActual < capitulos.length - 1 && setCapituloActualId(capitulos[indiceActual + 1].id);
 
@@ -219,7 +232,25 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
                 className="flex items-center gap-1.5 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-sm"
                 style={{ fontFamily: "Lora, serif" }}
               >
-                <Pencil size={14} /> Editar
+                <Pencil size={14} /> Datos de la obra
+              </button>
+            )}
+            {canEdit && capituloActual && (
+              <button
+                onClick={abrirEditarCapituloActual}
+                className="flex items-center gap-1.5 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-sm"
+                style={{ fontFamily: "Lora, serif" }}
+              >
+                <Pencil size={14} /> Editar capítulo
+              </button>
+            )}
+            {canEdit && (
+              <button
+                onClick={abrirNuevoCapitulo}
+                className="flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
+                style={{ fontFamily: "Lora, serif" }}
+              >
+                <BookPlus size={14} /> Agregar capítulo
               </button>
             )}
             {canDelete && (
@@ -361,6 +392,19 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
 
       {reportando && (
         <ReportModal user={user} historiaId={story.id} onClose={() => setReportando(false)} />
+      )}
+
+      {modalCapitulo && (
+        <PublicarCapituloModal
+          story={story}
+          editingCapitulo={modalCapitulo.editingCapitulo}
+          siguienteNumero={modalCapitulo.siguienteNumero}
+          onClose={() => setModalCapitulo(null)}
+          onSaved={(capituloGuardado) => {
+            cargarCapitulos();
+            setCapituloActualId(capituloGuardado.id);
+          }}
+        />
       )}
       </div>
     </>
