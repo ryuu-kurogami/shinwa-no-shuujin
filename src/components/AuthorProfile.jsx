@@ -93,7 +93,7 @@ export default function AuthorProfile({ authorId, stories, user, onBack, onOpenS
         </div>
 
         <div className="min-w-0 flex-1">
-          <h1 className="text-[#EDE6D6] text-2xl sm:text-3xl leading-tight" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
+          <h1 className="text-[#EDE6D6] text-2xl sm:text-3xl leading-tight truncate" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
             {profile?.username || authorName}
           </h1>
           <p className="text-[#7d7389] text-sm mt-0.5" style={{ fontFamily: "Lora, serif" }}>

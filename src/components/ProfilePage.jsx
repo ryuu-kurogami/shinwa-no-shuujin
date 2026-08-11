@@ -127,7 +127,7 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
 
         <div className="min-w-0 flex-1">
           <h1
-            className="text-[#EDE6D6] text-2xl sm:text-3xl leading-tight"
+            className="text-[#EDE6D6] text-2xl sm:text-3xl leading-tight truncate"
             style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}
           >
             {profile?.username || "Tu perfil"}

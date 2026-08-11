@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag, ChevronLeft, ChevronRight, BookOpen, Clock3, BookPlus } from "lucide-react";
+import { X, Trash2, Pencil, UserPlus, UserCheck, Eye, Flag, ChevronLeft, ChevronRight, BookOpen, Clock3, BookPlus, MoreVertical } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import CommentThread from "./CommentThread";
 import { supabase, ADMIN_EMAILS, signInWithGoogle } from "../lib/supabaseClient";
@@ -41,6 +41,7 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
   const [contadorSeguidores, setContadorSeguidores] = useState(null);
   const [reportando, setReportando] = useState(false);
   const [modalCapitulo, setModalCapitulo] = useState(null); // { editingCapitulo? , siguienteNumero? }
+  const [menuAbierto, setMenuAbierto] = useState(false);
   const [capitulos, setCapitulos] = useState(null);
   const [capituloActualId, setCapituloActualId] = useState(null);
   const [progresoLectura, setProgresoLectura] = useState(0);
@@ -221,46 +222,78 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
           <div className="flex items-center gap-4">
             <button
               onClick={() => setReportando(true)}
-              className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#e08a8a] transition-colors text-sm"
+              className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#e08a8a] transition-colors text-sm whitespace-nowrap"
               style={{ fontFamily: "Lora, serif" }}
             >
               <Flag size={13} /> Reportar
             </button>
-            {canEdit && (
-              <button
-                onClick={() => onEdit(story)}
-                className="flex items-center gap-1.5 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-sm"
-                style={{ fontFamily: "Lora, serif" }}
-              >
-                <Pencil size={14} /> Datos de la obra
-              </button>
-            )}
-            {canEdit && capituloActual && (
-              <button
-                onClick={abrirEditarCapituloActual}
-                className="flex items-center gap-1.5 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-sm"
-                style={{ fontFamily: "Lora, serif" }}
-              >
-                <Pencil size={14} /> Editar capítulo
-              </button>
-            )}
-            {canEdit && (
-              <button
-                onClick={abrirNuevoCapitulo}
-                className="flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
-                style={{ fontFamily: "Lora, serif" }}
-              >
-                <BookPlus size={14} /> Agregar capítulo
-              </button>
-            )}
-            {canDelete && (
-              <button
-                onClick={remove}
-                className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#e08a8a] transition-colors text-sm"
-                style={{ fontFamily: "Lora, serif" }}
-              >
-                <Trash2 size={14} /> Borrar
-              </button>
+
+            {(canEdit || canDelete) && (
+              <div className="relative">
+                <button
+                  onClick={() => setMenuAbierto((v) => !v)}
+                  className="text-[#7d7389] hover:text-[#b8afc4] transition-colors p-1"
+                  aria-label="Más acciones"
+                >
+                  <MoreVertical size={18} />
+                </button>
+
+                {menuAbierto && (
+                  <>
+                    <div className="fixed inset-0 z-[5]" onClick={() => setMenuAbierto(false)} />
+                    <div className="absolute right-0 top-full mt-2 w-56 rounded-sm border border-[#4a3f52] bg-[#1d1824] shadow-lg z-10 py-1.5 overflow-hidden">
+                      {canEdit && (
+                        <button
+                          onClick={() => {
+                            onEdit(story);
+                            setMenuAbierto(false);
+                          }}
+                          className="w-full text-left flex items-center gap-2 px-3.5 py-2.5 text-sm text-[#7C8B63] hover:bg-[#241d2c] transition-colors"
+                          style={{ fontFamily: "Lora, serif" }}
+                        >
+                          <Pencil size={14} /> Datos de la obra
+                        </button>
+                      )}
+                      {canEdit && capituloActual && (
+                        <button
+                          onClick={() => {
+                            abrirEditarCapituloActual();
+                            setMenuAbierto(false);
+                          }}
+                          className="w-full text-left flex items-center gap-2 px-3.5 py-2.5 text-sm text-[#7C8B63] hover:bg-[#241d2c] transition-colors"
+                          style={{ fontFamily: "Lora, serif" }}
+                        >
+                          <Pencil size={14} /> Editar capítulo
+                        </button>
+                      )}
+                      {canEdit && (
+                        <button
+                          onClick={() => {
+                            abrirNuevoCapitulo();
+                            setMenuAbierto(false);
+                          }}
+                          className="w-full text-left flex items-center gap-2 px-3.5 py-2.5 text-sm text-[#B08D57] hover:bg-[#241d2c] transition-colors"
+                          style={{ fontFamily: "Lora, serif" }}
+                        >
+                          <BookPlus size={14} /> Agregar capítulo
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={() => {
+                            setMenuAbierto(false);
+                            remove();
+                          }}
+                          className="w-full text-left flex items-center gap-2 px-3.5 py-2.5 text-sm text-[#e08a8a] hover:bg-[#7A2E2E]/10 transition-colors"
+                          style={{ fontFamily: "Lora, serif" }}
+                        >
+                          <Trash2 size={14} /> Borrar
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
         </div>
