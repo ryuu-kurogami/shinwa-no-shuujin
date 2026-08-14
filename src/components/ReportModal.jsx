@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
-import { X, Flag } from "lucide-react";
+import { X, Flag, ImagePlus } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+const CLOUDINARY_CLOUD_NAME = "ahwle70d";
+const CLOUDINARY_UPLOAD_PRESET = "shinwa_portadas";
 
 const MOTIVOS = [
   { value: "contenido_prohibido", label: "Contenido prohibido (menores, no consensual, violencia extrema)" },
@@ -15,15 +17,47 @@ const MOTIVOS = [
 // "user" es opcional a propósito — reportar no exige cuenta (Términos,
 // Sección 7.2). El captcha + el rate limiting del lado del servidor son la
 // defensa contra que esto se use para tumbar cuentas legítimas en masa.
-export default function ReportModal({ user, historiaId, comentarioId, onClose }) {
+export default function ReportModal({ user, historiaId, comentarioId, capituloId, onClose }) {
   const [motivo, setMotivo] = useState("contenido_prohibido");
   const [evidencia, setEvidencia] = useState("");
+  const [evidenciaImagenUrl, setEvidenciaImagenUrl] = useState("");
+  const [contactoEmail, setContactoEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [enviado, setEnviado] = useState(false);
   const [captchaToken, setCaptchaToken] = useState(null);
   const widgetRef = useRef(null);
   const turnstileId = useRef(null);
+  const uploadWidgetRef = useRef(null);
+
+  const abrirWidgetImagen = () => {
+    if (!window.cloudinary) return;
+    if (!uploadWidgetRef.current) {
+      uploadWidgetRef.current = window.cloudinary.createUploadWidget(
+        {
+          cloudName: CLOUDINARY_CLOUD_NAME,
+          uploadPreset: CLOUDINARY_UPLOAD_PRESET,
+          sources: ["local", "url"],
+          multiple: false,
+          maxFileSize: 5_000_000,
+          language: "es",
+        },
+        (uploadError, result) => {
+          if (uploadError) return;
+          if (result?.event === "success") setEvidenciaImagenUrl(result.info.secure_url);
+        }
+      );
+    }
+    uploadWidgetRef.current.open();
+  };
+
+  useEffect(() => {
+    if (window.cloudinary) return;
+    const script = document.createElement("script");
+    script.src = "https://upload-widget.cloudinary.com/global/all.js";
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
 
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY || !window.turnstile || !widgetRef.current) return;
@@ -55,8 +89,11 @@ export default function ReportModal({ user, historiaId, comentarioId, onClose })
           token: captchaToken,
           historia_id: historiaId || null,
           comentario_id: comentarioId || null,
+          capitulo_id: capituloId || null,
           motivo,
           evidencia: evidencia.trim() || null,
+          evidencia_imagen_url: evidenciaImagenUrl || null,
+          contacto_email: contactoEmail.trim() || null,
         },
       });
       if (error) throw error;
@@ -130,6 +167,37 @@ export default function ReportModal({ user, historiaId, comentarioId, onClose })
                 style={{ fontFamily: "Lora, serif" }}
                 placeholder="Links, capturas, contexto adicional..."
               />
+            </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={abrirWidgetImagen}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-[#4a3f52] text-[#B08D57] hover:text-[#e8c9a3] hover:border-[#B08D57] transition-colors text-sm"
+                style={{ fontFamily: "Lora, serif" }}
+              >
+                <ImagePlus size={15} /> {evidenciaImagenUrl ? "Cambiar imagen de evidencia" : "Adjuntar imagen de evidencia (opcional)"}
+              </button>
+              {evidenciaImagenUrl && (
+                <img src={evidenciaImagenUrl} alt="Evidencia" className="w-16 h-16 mt-2 rounded-sm object-cover border border-[#4a3f52]" />
+              )}
+            </div>
+
+            <div>
+              <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
+                Tu correo, si querés que te avisemos (opcional)
+              </label>
+              <input
+                type="email"
+                value={contactoEmail}
+                onChange={(e) => setContactoEmail(e.target.value)}
+                className="w-full bg-[#0f0c14] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+                style={{ fontFamily: "Lora, serif" }}
+                placeholder="tu@correo.com"
+              />
+              <p className="text-[#7d7389] text-[11px] mt-1" style={{ fontFamily: "Lora, serif" }}>
+                Recordá que este es un proyecto de una sola persona — la revisión puede tardar unos días.
+              </p>
             </div>
 
             {TURNSTILE_SITE_KEY && <div ref={widgetRef} />}

@@ -34,7 +34,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { token, historia_id, comentario_id, motivo, evidencia } = await req.json()
+    const { token, historia_id, comentario_id, capitulo_id, motivo, evidencia, evidencia_imagen_url, contacto_email } = await req.json()
 
     // --- 0. Validaciones básicas ---
     if (!token || !motivo || (!historia_id && !comentario_id)) {
@@ -95,7 +95,32 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // --- 4. Rate limiting por IP — aplica con o sin cuenta, es la defensa
+    // --- 4. No dejar que la misma cuenta (o la misma IP, si es anónimo)
+    // reporte el mismo objetivo dos veces mientras el primer reporte siga
+    // pendiente — evita inflar la cola con duplicados del mismo reportante.
+    let dupQuery = supabase.from('reportes').select('id').eq('estado', 'pendiente').limit(1)
+    if (comentario_id) {
+      dupQuery = dupQuery.eq('comentario_id', comentario_id)
+    } else if (capitulo_id) {
+      dupQuery = dupQuery.eq('historia_id', historia_id).eq('capitulo_id', capitulo_id)
+    } else {
+      dupQuery = dupQuery.eq('historia_id', historia_id)
+    }
+    dupQuery = verifiedUserId
+      ? dupQuery.eq('reportado_por', verifiedUserId)
+      : dupQuery.is('reportado_por', null)
+
+    const ipParaDedupe = obtenerIp(req)
+    if (!verifiedUserId && ipParaDedupe !== 'desconocida') {
+      dupQuery = dupQuery.eq('ip_address', ipParaDedupe)
+    }
+
+    const { data: duplicado } = await dupQuery.maybeSingle()
+    if (duplicado) {
+      return jsonResponse({ error: 'Ya enviaste un reporte para esto — está pendiente de revisión.' }, 409)
+    }
+
+    // --- 5. Rate limiting por IP — aplica con o sin cuenta, es la defensa
     // real contra usar reportes para tumbar cuentas legítimas en masa.
     const ip = obtenerIp(req)
     if (ip !== 'desconocida') {
@@ -125,12 +150,22 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    if (evidencia_imagen_url && typeof evidencia_imagen_url === 'string' && !evidencia_imagen_url.startsWith('https://')) {
+      return jsonResponse({ error: 'Evidencia de imagen inválida' }, 400)
+    }
+    if (contacto_email && typeof contacto_email === 'string' && !contacto_email.includes('@')) {
+      return jsonResponse({ error: 'Correo de contacto inválido' }, 400)
+    }
+
     const { data, error } = await supabase.from('reportes').insert({
       historia_id: historia_id || null,
       comentario_id: comentario_id || null,
+      capitulo_id: capitulo_id || null,
       reportado_por: verifiedUserId, // null si es anónimo — NUNCA del body
       motivo,
       evidencia: typeof evidencia === 'string' ? evidencia.trim() || null : null,
+      evidencia_imagen_url: typeof evidencia_imagen_url === 'string' ? evidencia_imagen_url.trim() || null : null,
+      contacto_email: typeof contacto_email === 'string' ? contacto_email.trim() || null : null,
       ip_address: ip !== 'desconocida' ? ip : null,
     })
 

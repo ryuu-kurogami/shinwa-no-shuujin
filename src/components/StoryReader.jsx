@@ -177,8 +177,8 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
   const isAuthor = user && user.id === story.author_id;
   // Editar: solo el autor. Borrar: el autor o el admin (moderación de contenido dañino).
-  const canEdit = isAuthor;
-  const canDelete = isAdmin || isAuthor;
+  const canEdit = isAuthor && !story.congelada;
+  const canDelete = isAdmin || (isAuthor && !story.congelada);
 
   const remove = async () => {
     if (!window.confirm("¿Borrar esta historia? Se borran todos sus capítulos. No se puede deshacer.")) return;
@@ -310,6 +310,16 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
           )}
         </div>
 
+        {isAuthor && story.congelada && (
+          <div className="flex items-center gap-2 mb-4 px-3.5 py-2.5 rounded-sm border border-[#7A2E2E] bg-[#7A2E2E]/10">
+            <Flag size={13} className="text-[#e08a8a] shrink-0" />
+            <p className="text-[#e08a8a] text-xs leading-relaxed" style={{ fontFamily: "Lora, serif" }}>
+              Esta obra está congelada por tener un reporte en revisión — no se puede editar ni borrar (ni
+              agregar/editar capítulos) hasta que el equipo de moderación lo resuelva.
+            </p>
+          </div>
+        )}
+
         <h1 className="text-[#EDE6D6] text-3xl sm:text-4xl leading-tight mb-2" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
           {story.title}
         </h1>
@@ -424,7 +434,7 @@ export default function StoryReader({ story, user, onClose, onDeleted, onEdit, o
       </div>
 
       {reportando && (
-        <ReportModal user={user} historiaId={story.id} onClose={() => setReportando(false)} />
+        <ReportModal user={user} historiaId={story.id} capituloId={capituloActual?.id} onClose={() => setReportando(false)} />
       )}
 
       {modalCapitulo && (

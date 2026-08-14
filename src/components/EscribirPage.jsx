@@ -120,23 +120,32 @@ export default function EscribirPage({ user, stories, onNewStory, onEdit }) {
                           <span>{palabrasTotales.toLocaleString("es")} palabras</span>
                         </>
                       )}
+                      {s.congelada && (
+                        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-[#7A2E2E]/30 text-[#e08a8a]">
+                          Congelada
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 shrink-0">
-                    <button
-                      onClick={() => onEdit(s)}
-                      className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#b8afc4] transition-colors text-xs"
-                      style={{ fontFamily: "Lora, serif" }}
-                    >
-                      <Pencil size={12} /> Datos
-                    </button>
-                    <button
-                      onClick={() => abrirNuevoCapitulo(s)}
-                      className="flex items-center gap-1.5 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-xs"
-                      style={{ fontFamily: "Lora, serif" }}
-                    >
-                      <BookPlus size={12} /> Agregar capítulo
-                    </button>
+                    {!s.congelada && (
+                      <button
+                        onClick={() => onEdit(s)}
+                        className="flex items-center gap-1.5 text-[#7d7389] hover:text-[#b8afc4] transition-colors text-xs"
+                        style={{ fontFamily: "Lora, serif" }}
+                      >
+                        <Pencil size={12} /> Datos
+                      </button>
+                    )}
+                    {!s.congelada && (
+                      <button
+                        onClick={() => abrirNuevoCapitulo(s)}
+                        className="flex items-center gap-1.5 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-xs"
+                        style={{ fontFamily: "Lora, serif" }}
+                      >
+                        <BookPlus size={12} /> Agregar capítulo
+                      </button>
+                    )}
                     <button
                       onClick={() => toggleExpandir(s.id)}
                       className="flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-xs"
@@ -163,13 +172,15 @@ export default function EscribirPage({ user, stories, onNewStory, onEdit }) {
                               <span className="text-[#B08D57] text-xs ml-2">({ESTADO_CAPITULO_LABEL[c.estado]})</span>
                             )}
                           </p>
-                          <button
-                            onClick={() => abrirEditarCapitulo(s, c)}
-                            className="flex items-center gap-1 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-xs shrink-0"
-                            style={{ fontFamily: "Lora, serif" }}
-                          >
-                            <Pencil size={11} /> Editar
-                          </button>
+                          {!s.congelada && (
+                            <button
+                              onClick={() => abrirEditarCapitulo(s, c)}
+                              className="flex items-center gap-1 text-[#7C8B63] hover:text-[#9db07d] transition-colors text-xs shrink-0"
+                              style={{ fontFamily: "Lora, serif" }}
+                            >
+                              <Pencil size={11} /> Editar
+                            </button>
+                          )}
                         </div>
                       ))
                     )}

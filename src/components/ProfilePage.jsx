@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart, Clock3, UserX } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart, Clock3, UserX, Bell } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import { supabase } from "../lib/supabaseClient";
 import EditProfileModal from "./EditProfileModal";
@@ -29,6 +29,7 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
   const misHistorias = (stories || []).filter((s) => s.author_id === user.id);
   const [siguiendo, setSiguiendo] = useState([]);
   const [profile, setProfile] = useState(null);
+  const [notificaciones, setNotificaciones] = useState(null);
   const [disputasPorHistoria, setDisputasPorHistoria] = useState({});
   const [respondiendoDisputa, setRespondiendoDisputa] = useState(null);
   const [editandoPerfil, setEditandoPerfil] = useState(false);
@@ -42,6 +43,21 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
       .maybeSingle()
       .then(({ data }) => setProfile(data));
   }, [user.id]);
+
+  useEffect(() => {
+    supabase
+      .from("notificaciones")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20)
+      .then(({ data }) => setNotificaciones(data || []));
+  }, [user.id]);
+
+  const marcarNotificacionLeida = async (id) => {
+    await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
+    setNotificaciones((prev) => prev.map((n) => (n.id === id ? { ...n, leida: true } : n)));
+  };
 
   useEffect(() => {
     supabase
@@ -178,6 +194,36 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
             Podés seguir leyendo con normalidad.
           </p>
         </div>
+      )}
+
+      {notificaciones && notificaciones.length > 0 && (
+        <>
+          <div className="flex items-center gap-3 mb-5">
+            <Bell size={16} className="text-[#7C8B63]" />
+            <h2 className="text-[#7C8B63] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+              Notificaciones ({notificaciones.filter((n) => !n.leida).length} sin leer)
+            </h2>
+            <div className="flex-1 h-px bg-[#4a3f52]" />
+          </div>
+          <div className="space-y-2 mb-10">
+            {notificaciones.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => !n.leida && marcarNotificacionLeida(n.id)}
+                className={`w-full text-left rounded-sm border px-3.5 py-2.5 transition-colors ${
+                  n.leida ? "border-[#4a3f52] bg-[#1d1824]/50" : "border-[#B08D57] bg-[#B08D57]/10"
+                }`}
+              >
+                <p className={`text-sm leading-relaxed ${n.leida ? "text-[#7d7389]" : "text-[#EDE6D6]"}`} style={{ fontFamily: "Lora, serif" }}>
+                  {n.mensaje}
+                </p>
+                <p className="text-[#7d7389] text-[11px] mt-1">
+                  {new Date(n.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
+                </p>
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="flex items-center gap-3 mb-5">

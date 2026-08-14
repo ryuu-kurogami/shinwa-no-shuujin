@@ -233,6 +233,27 @@ export default function PublishModal({ user, editingStory, onClose, onSaved }) {
     );
   }
 
+  if (isEditing && editingStory.congelada) {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm flex items-center justify-center px-5">
+        <div className="max-w-sm w-full text-center border border-[#7A2E2E] rounded-sm p-6 bg-[#1d1824]">
+          <ShieldAlert size={22} className="text-[#e08a8a] mx-auto mb-3" />
+          <p className="text-[#e08a8a] text-sm leading-relaxed mb-5" style={{ fontFamily: "Lora, serif" }}>
+            Esta obra está congelada por tener un reporte en revisión. No se puede editar hasta que el equipo
+            de moderación lo resuelva.
+          </p>
+          <button
+            onClick={onClose}
+            className="text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
+            style={{ fontFamily: "Lora, serif" }}
+          >
+            Entendido
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm overflow-y-auto">
       <div className="max-w-xl mx-auto px-5 py-10 sm:py-16">

@@ -6,7 +6,7 @@
 export const terminosContent = {
   titulo: "Términos y Condiciones de Uso",
   subtitulo: "Shinwa no Shuujin (神話の集人)",
-  ultimaActualizacion: "9 de agosto de 2026",
+  ultimaActualizacion: "11 de agosto de 2026",
   enlaceRelacionado: { href: "/privacidad", texto: "Ver también la Política de Privacidad" },
   secciones: [
     {
@@ -73,8 +73,10 @@ export const terminosContent = {
       encabezado: "7. Plagio y Contenido de Terceros",
       parrafos: [
         { numero: "7.1.", texto: "Disputas entre autores del Sitio: si dos autores registrados se acusan mutuamente de plagio, ambas partes deberán presentar evidencia que respalde su reclamo. El Administrador evaluará dicha evidencia y tomará una decisión final." },
-        { numero: "7.2.", texto: "Obras de autores externos a la Plataforma: cualquier persona, tenga o no cuenta en el Sitio, puede reportar contenido publicado acá como una copia no autorizada de una obra externa, siempre que aporte evidencia razonable. Para evitar el uso indiscriminado de esta herramienta, cada reporte pasa por una verificación de captcha y tiene un límite de envíos por período de tiempo. El Administrador revisará el reporte y podrá retirar el contenido mientras dura la investigación." },
+        { numero: "7.2.", texto: "Obras de autores externos a la Plataforma: cualquier persona, tenga o no cuenta en el Sitio, puede reportar contenido publicado acá como una copia no autorizada de una obra externa, siempre que aporte evidencia razonable — texto, un link, o una imagen de evidencia. Quien reporta puede dejar opcionalmente un correo de contacto para que se le avise cuando el caso se resuelva. Para evitar el uso indiscriminado de esta herramienta, cada reporte pasa por una verificación de captcha, tiene un límite de envíos por período de tiempo, y no se puede reportar el mismo contenido dos veces mientras el primer reporte siga pendiente. El Administrador revisará el reporte y podrá retirar el contenido mientras dura la investigación." },
         { numero: "7.3.", texto: "El Sitio no verifica de forma proactiva la originalidad de todo el contenido publicado; actúa únicamente ante reportes con evidencia. Cada autor, al publicar, declara ser el autor original de su obra o contar con los derechos necesarios para publicarla (ver 3.3), asumiendo la responsabilidad primaria en caso de infracción." },
+        { numero: "7.4.", texto: "Mientras una obra tiene un reporte pendiente de revisión que la ocultó automáticamente, queda congelada: el autor no puede editarla, borrarla, ni modificar sus capítulos hasta que el Administrador resuelva el caso. Esto evita que se elimine evidencia antes de la revisión." },
+        { numero: "7.5.", texto: "Shinwa no Shuujin es administrado por una sola persona. El Sitio hace su mejor esfuerzo por revisar los reportes con la mayor celeridad posible, pero no puede garantizar un plazo fijo de respuesta — pedimos comprensión con los tiempos reales de un proyecto de este tamaño." },
       ],
     },
     {
