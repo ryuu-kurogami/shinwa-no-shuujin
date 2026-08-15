@@ -159,11 +159,11 @@ export default function TransparenciaPage({ onBack, isAdmin }) {
         </div>
       </div>
 
-      {/* ---------- Donaciones ---------- */}
+      {/* ---------- Apoyo ---------- */}
       <div className="flex items-center gap-2 mb-4">
         <Heart size={15} className="text-[#7A2E2E]" />
         <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
-          Donaciones al sitio
+          Apoyo al sitio
         </h2>
         <div className="flex-1 h-px bg-[#4a3f52]" />
       </div>

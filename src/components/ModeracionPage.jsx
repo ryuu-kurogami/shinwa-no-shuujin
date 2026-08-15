@@ -1,539 +1,784 @@
-import React, { useState, useEffect, useRef } from "react";
-import { X, Feather, ImagePlus, ShieldAlert } from "lucide-react";
+import React, { useEffect, useState, useCallback } from "react";
+import { ShieldAlert, Trash2, Ban, CheckCircle2, ExternalLink, Clock3, Search, UserX, Eye, Coins, Plus, ImagePlus, Mail, Wifi } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./AgeGate";
-import { contarPalabras, contarCaracteres } from "../utils/textoStats";
 
-const CLOUDINARY_CLOUD_NAME = "ahwle70d";
-const CLOUDINARY_UPLOAD_PRESET = "shinwa_portadas";
+const MOTIVO_LABEL = {
+  contenido_prohibido: "Contenido prohibido",
+  plagio_interno: "Plagio interno",
+  plagio_externo: "Plagio externo",
+  spam: "Spam",
+  otro: "Otro",
+};
 
-const ESTADOS_PUBLICACION = [
-  { value: "en_emision", label: "En emisión" },
-  { value: "en_pausa", label: "En pausa" },
-  { value: "finalizado", label: "Finalizado" },
+// Prioridad: contenido_prohibido siempre primero
+const PRIORIDAD = { contenido_prohibido: 0, plagio_interno: 1, plagio_externo: 1, spam: 2, otro: 3 };
+
+const DURACIONES = [
+  { label: "3 días", horas: 72 },
+  { label: "7 días", horas: 168 },
+  { label: "30 días", horas: 720 },
+  { label: "Permanente", horas: null },
 ];
 
-// Este modal ahora cubre tres casos distintos:
-// 1. Historia nueva → crea la fila en `stories` y su capítulo 1 juntos.
-// 2. Editar una historia cuyo capítulo 1 sigue en borrador ("continuar
-//    escribiendo") → edita metadatos y el texto del capítulo 1 a la vez.
-// 3. Editar una historia cuyo capítulo 1 ya está publicado/en revisión →
-//    solo metadatos, el texto de los capítulos se edita desde
-//    PublicarCapituloModal (agregar capítulos nuevos vive ahí también).
-export default function PublishModal({ user, editingStory, onClose, onSaved }) {
-  const isEditing = Boolean(editingStory);
-  const [title, setTitle] = useState(editingStory?.title || "");
-  const [fraseIconica, setFraseIconica] = useState(editingStory?.frase_iconica || "");
-  const [categoria, setCategoria] = useState(editingStory?.categoria || "corto");
-  const [estadoPublicacion, setEstadoPublicacion] = useState(editingStory?.estado_publicacion || "en_emision");
-  const [tagsInput, setTagsInput] = useState((editingStory?.tags || []).join(", "));
-  const [excerpt, setExcerpt] = useState(editingStory?.excerpt || "");
-  const [content, setContent] = useState("");
-  const [tituloCapitulo, setTituloCapitulo] = useState("");
-  const [portadaUrl, setPortadaUrl] = useState(editingStory?.portada_url || "");
-  const [esAdulto, setEsAdulto] = useState(editingStory?.es_adulto || false);
-  const [declaracion18, setDeclaracion18] = useState(editingStory?.declaracion_18_ok || false);
-  const [mostrarGateAutor, setMostrarGateAutor] = useState(false);
-  const [saving, setSaving] = useState(false);
+// baneado_hasta permanente se guarda como esta fecha centinela (ver banear())
+const PERMANENTE_ISO = "9999-12-31T00:00:00Z";
+
+function tiempoRestante(baneadoHasta) {
+  if (!baneadoHasta) return null;
+  if (baneadoHasta.startsWith("9999")) return "Permanente";
+  const ms = new Date(baneadoHasta).getTime() - Date.now();
+  if (ms <= 0) return null;
+  const dias = Math.ceil(ms / (1000 * 60 * 60 * 24));
+  if (dias >= 1) return `${dias} día${dias !== 1 ? "s" : ""} restante${dias !== 1 ? "s" : ""}`;
+  const horas = Math.max(1, Math.ceil(ms / (1000 * 60 * 60)));
+  return `${horas} hora${horas !== 1 ? "s" : ""} restante${horas !== 1 ? "s" : ""}`;
+}
+
+export default function ModeracionPage() {
+  const [reportes, setReportes] = useState(null);
+  const [infraccionesPorUsuario, setInfraccionesPorUsuario] = useState({});
+  const [conteoPorIP, setConteoPorIP] = useState({});
+  const [enRevision, setEnRevision] = useState(null);
+  const [baneados, setBaneados] = useState(null);
+  const [busqueda, setBusqueda] = useState("");
+  const [resultadosBusqueda, setResultadosBusqueda] = useState(null);
+  const [buscando, setBuscando] = useState(false);
+  const [fondos, setFondos] = useState(null);
+  const [nuevoFondo, setNuevoFondo] = useState({ tipo: "ingreso", monto: "", descripcion: "" });
+  const [guardandoFondo, setGuardandoFondo] = useState(false);
   const [err, setErr] = useState("");
 
-  const [capituloUno, setCapituloUno] = useState(null);
-  const [cargandoCapitulo, setCargandoCapitulo] = useState(isEditing);
+  const cargar = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("reportes")
+      .select("*")
+      .eq("estado", "pendiente")
+      .order("created_at", { ascending: true });
 
-  const widgetRef = useRef(null);
+    if (error) {
+      setErr("No se pudieron cargar los reportes.");
+      return;
+    }
 
-  // Al editar, necesitamos saber si el capítulo 1 todavía está en borrador
-  // (en cuyo caso su texto se edita acá mismo) o ya está publicado/en
-  // revisión (en cuyo caso este modal es solo metadatos).
-  useEffect(() => {
-    if (!editingStory) return;
-    supabase
-      .from("capitulos")
-      .select("id, content, titulo, estado")
-      .eq("story_id", editingStory.id)
-      .eq("numero", 1)
-      .maybeSingle()
-      .then(({ data }) => {
-        setCapituloUno(data);
-        if (data?.estado === "borrador") {
-          setContent(data.content || "");
-          setTituloCapitulo(data.titulo || "");
+    // Enriquecemos cada reporte con el título de la historia o el texto del
+    // comentario, para no tener que navegar afuera a ver de qué se trata.
+    const enriquecidos = await Promise.all(
+      (data || []).map(async (r) => {
+        let capitulo = null;
+        if (r.capitulo_id) {
+          const { data: cap } = await supabase
+            .from("capitulos")
+            .select("numero, titulo")
+            .eq("id", r.capitulo_id)
+            .maybeSingle();
+          capitulo = cap;
         }
-        setCargandoCapitulo(false);
-      });
-  }, [editingStory]);
+        if (r.historia_id) {
+          const { data: historia } = await supabase
+            .from("stories")
+            .select("id, title, author_id, author_name, estado")
+            .eq("id", r.historia_id)
+            .maybeSingle();
+          return { ...r, tipo: "historia", contenido: historia, capitulo };
+        }
+        if (r.comentario_id) {
+          const { data: comentario } = await supabase
+            .from("comments")
+            .select("id, text, user_id, commenter_name, story_id")
+            .eq("id", r.comentario_id)
+            .maybeSingle();
+          return { ...r, tipo: "comentario", contenido: comentario, capitulo };
+        }
+        return { ...r, tipo: "desconocido", contenido: null, capitulo };
+      })
+    );
 
-  const esBorradorSinTerminar = isEditing && capituloUno?.estado === "borrador";
-  const mostrarEditorDeTexto = !isEditing || esBorradorSinTerminar;
+    enriquecidos.sort((a, b) => (PRIORIDAD[a.motivo] ?? 9) - (PRIORIDAD[b.motivo] ?? 9));
+    setReportes(enriquecidos);
 
-  // Carga el script del Upload Widget de Cloudinary una sola vez
-  useEffect(() => {
-    if (window.cloudinary) return;
-    const script = document.createElement("script");
-    script.src = "https://upload-widget.cloudinary.com/global/all.js";
-    script.async = true;
-    document.body.appendChild(script);
+    // Cuántos reportes pendientes comparten cada IP — una señal simple para
+    // detectar ataques coordinados (varias cuentas, misma conexión) sin
+    // agregar tracking nuevo, ya que la IP se guarda desde antes.
+    const conteoIP = {};
+    enriquecidos.forEach((r) => {
+      if (r.ip_address) conteoIP[r.ip_address] = (conteoIP[r.ip_address] || 0) + 1;
+    });
+    setConteoPorIP(conteoIP);
+
+    // Reincidencia (infracciones) de cada autor/usuario involucrado, para
+    // mostrarla junto al reporte sin tener que ir a buscarla aparte.
+    const idsInvolucrados = [
+      ...new Set(
+        enriquecidos
+          .map((r) => (r.tipo === "historia" ? r.contenido?.author_id : r.contenido?.user_id))
+          .filter(Boolean)
+      ),
+    ];
+    if (idsInvolucrados.length > 0) {
+      const { data: perfiles } = await supabase
+        .from("profiles")
+        .select("id, infracciones")
+        .in("id", idsInvolucrados);
+      const mapa = {};
+      (perfiles || []).forEach((p) => (mapa[p.id] = p.infracciones || 0));
+      setInfraccionesPorUsuario(mapa);
+    }
   }, []);
 
-  const openUploadWidget = () => {
-    if (!window.cloudinary) {
-      setErr("El widget de portadas todavía está cargando, esperá un segundo y probá de nuevo.");
+  const cargarEnRevision = useCallback(async () => {
+    const [{ data: historias, error: errH }, { data: capitulos, error: errC }] = await Promise.all([
+      supabase
+        .from("stories")
+        .select("id, title, author_id, author_name, created_at, es_adulto")
+        .eq("estado", "pendiente_revision")
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("capitulos")
+        .select("id, numero, titulo, created_at, story:stories(id, title, author_id, author_name, es_adulto)")
+        .eq("estado", "pendiente_revision")
+        .order("created_at", { ascending: true }),
+    ]);
+
+    if (errH || errC) {
+      setErr("No se pudo cargar el contenido en revisión.");
       return;
     }
-    if (!widgetRef.current) {
-      widgetRef.current = window.cloudinary.createUploadWidget(
-        {
-          cloudName: CLOUDINARY_CLOUD_NAME,
-          uploadPreset: CLOUDINARY_UPLOAD_PRESET,
-          sources: ["local", "url", "camera"],
-          multiple: false,
-          maxFileSize: 5_000_000, // 5MB
-          cropping: true,
-          croppingAspectRatio: 1, // cuadrada, coherente con el sello circular
-          language: "es",
-          text: {
-            es: {
-              crop: { title: "Recortá tu portada" },
-              local: { browse: "Elegir archivo", dd_title_single: "Arrastrá tu imagen acá" },
-            },
-          },
-        },
-        (uploadError, result) => {
-          if (uploadError) {
-            setErr("No se pudo subir la portada. Probá de nuevo.");
-            return;
-          }
-          if (result?.event === "success") {
-            setPortadaUrl(result.info.secure_url);
-            setErr("");
-          }
-        }
-      );
-    }
-    widgetRef.current.open();
-  };
 
-  const submit = async (e, estadoDestino) => {
-    e.preventDefault();
-    if (!title.trim()) {
-      setErr("El título es obligatorio.");
-      return;
-    }
-    if (mostrarEditorDeTexto && !content.trim()) {
-      setErr("El texto del capítulo 1 es obligatorio.");
-      return;
-    }
-    if (esAdulto && !declaracion18) {
-      setErr("Para marcar la historia como contenido +18 tenés que confirmar la declaración del autor (ver Términos, Sección 4.4).");
-      return;
-    }
-    setSaving(true);
-    setErr("");
-    try {
-      const metadatos = {
-        title: title.trim(),
-        span: editingStory?.span || "instante suspendido", // legado, ya no se muestra en el sello
-        frase_iconica: fraseIconica.trim().slice(0, 60) || "Instante suspendido",
-        categoria,
-        estado_publicacion: estadoPublicacion,
-        tags: tagsInput
-          .split(",")
-          .map((t) => t.trim().toLowerCase())
-          .filter(Boolean)
-          .slice(0, 10), // límite razonable, evita spam de tags
-        excerpt:
-          excerpt.trim() ||
-          (mostrarEditorDeTexto ? content.trim().slice(0, 140) + "..." : editingStory?.excerpt || ""),
-        portada_url: portadaUrl || null,
-        es_adulto: esAdulto,
-        declaracion_18_ok: esAdulto ? declaracion18 : false,
-      };
+    const itemsHistorias = (historias || []).map((h) => ({
+      tipo: "historia",
+      id: h.id,
+      title: h.title,
+      author_name: h.author_name,
+      created_at: h.created_at,
+      es_adulto: h.es_adulto,
+    }));
 
-      if (!isEditing) {
-        // Contenido +18 (ver Términos, Sección 4.5): mientras el Sitio tenga
-        // volumen reducido de usuarios, se revisa manualmente antes de
-        // publicarse — "Publicar" no lo saca directo a producción.
-        const estadoFinal = esAdulto && estadoDestino === "publicado" ? "pendiente_revision" : estadoDestino;
+    // Capítulos nuevos de obras +18 ya existentes (Sección 4.5) — no
+    // confundir con la revisión inicial de la historia, que es la de arriba.
+    const itemsCapitulos = (capitulos || [])
+      .filter((c) => c.story)
+      .map((c) => ({
+        tipo: "capitulo",
+        id: c.id,
+        title: c.story.title,
+        author_name: c.story.author_name,
+        created_at: c.created_at,
+        es_adulto: c.story.es_adulto,
+        numero: c.numero,
+        capituloTitulo: c.titulo,
+      }));
 
-        const { data: nuevaHistoria, error: errHistoria } = await supabase
-          .from("stories")
-          .insert({
-            ...metadatos,
-            author_id: user.id,
-            author_name: user.user_metadata?.full_name || user.email,
-            estado: estadoFinal,
-          })
-          .select()
-          .single();
-        if (errHistoria) throw errHistoria;
-
-        const { error: errCapitulo } = await supabase
-          .from("capitulos")
-          .insert({
-            story_id: nuevaHistoria.id,
-            numero: 1,
-            titulo: tituloCapitulo.trim() || null,
-            content: content.trim(),
-            estado: estadoFinal,
-          });
-        if (errCapitulo) {
-          // No dejamos una historia fantasma sin ningún capítulo.
-          await supabase.from("stories").delete().eq("id", nuevaHistoria.id);
-          throw errCapitulo;
-        }
-
-        onSaved(nuevaHistoria);
-        onClose();
-      } else if (esBorradorSinTerminar) {
-        const estadoFinal = esAdulto && estadoDestino === "publicado" ? "pendiente_revision" : estadoDestino;
-
-        const { data: historiaActualizada, error: errHistoria } = await supabase
-          .from("stories")
-          .update({ ...metadatos, estado: estadoFinal })
-          .eq("id", editingStory.id)
-          .select()
-          .single();
-        if (errHistoria) throw errHistoria;
-
-        const { error: errCapitulo } = await supabase
-          .from("capitulos")
-          .update({ titulo: tituloCapitulo.trim() || null, content: content.trim(), estado: estadoFinal })
-          .eq("id", capituloUno.id);
-        if (errCapitulo) throw errCapitulo;
-
-        onSaved(historiaActualizada);
-        onClose();
-      } else {
-        // Solo metadatos — el texto de los capítulos ya publicados se edita
-        // aparte, desde PublicarCapituloModal.
-        const { data: historiaActualizada, error } = await supabase
-          .from("stories")
-          .update(metadatos)
-          .eq("id", editingStory.id)
-          .select()
-          .single();
-        if (error) throw error;
-        onSaved(historiaActualizada);
-        onClose();
-      }
-    } catch {
-      setErr(isEditing ? "No se pudo guardar el cambio. Probá de nuevo." : "No se pudo publicar. Probá de nuevo.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (isEditing && cargandoCapitulo) {
-    return (
-      <div className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm flex items-center justify-center">
-        <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>
-          Cargando...
-        </p>
-      </div>
+    const todos = [...itemsHistorias, ...itemsCapitulos].sort(
+      (a, b) => new Date(a.created_at) - new Date(b.created_at)
     );
-  }
+    setEnRevision(todos);
+  }, []);
 
-  if (isEditing && editingStory.congelada) {
+  const cargarBaneados = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, username, baneado_hasta, infracciones")
+      .gt("baneado_hasta", new Date().toISOString())
+      .order("baneado_hasta", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      setErr("No se pudo cargar la lista de usuarios baneados.");
+      return;
+    }
+    setBaneados(data || []);
+  }, []);
+
+  const cargarFondos = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("fondos_sitio")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      setErr("No se pudo cargar los fondos del sitio.");
+      return;
+    }
+    setFondos(data || []);
+  }, []);
+
+  useEffect(() => {
+    cargar();
+    cargarEnRevision();
+    cargarBaneados();
+    cargarFondos();
+  }, [cargar, cargarEnRevision, cargarBaneados, cargarFondos]);
+
+  // Notificación in-app simple — si userId es null (reportante anónimo,
+  // o contenido sin autor identificable), no hace nada.
+  const notificar = async (userId, mensaje) => {
+    if (!userId) return;
+    await supabase.from("notificaciones").insert({ user_id: userId, mensaje });
+  };
+
+  const tituloDe = (r) => (r.tipo === "historia" ? r.contenido?.title || "una historia" : "un comentario");
+
+  const cerrarReporte = async (id) => {
+    await supabase.from("reportes").update({ estado: "resuelto" }).eq("id", id);
+    cargar();
+  };
+
+  const marcarResuelto = async (r) => {
+    await notificar(r.reportado_por, `Tu reporte sobre "${tituloDe(r)}" fue revisado — no se encontró una infracción.`);
+    await cerrarReporte(r.id);
+  };
+
+  const eliminarContenido = async (r) => {
+    if (!window.confirm("¿Eliminar este contenido permanentemente?")) return;
+    const autorId = r.tipo === "historia" ? r.contenido?.author_id : r.contenido?.user_id;
+    const titulo = tituloDe(r);
+    if (r.tipo === "historia") {
+      await supabase.from("stories").delete().eq("id", r.historia_id);
+    } else if (r.tipo === "comentario") {
+      await supabase.from("comments").delete().eq("id", r.comentario_id);
+    }
+    await notificar(r.reportado_por, `Tu reporte sobre "${titulo}" fue aprobado — el contenido se eliminó.`);
+    await notificar(autorId, `Se eliminó tu contenido "${titulo}" por infringir los Términos del Sitio.`);
+    await cerrarReporte(r.id);
+  };
+
+  // Para reportes de portada (copyright de la imagen, no del texto): en vez
+  // de borrar la obra entera, se oculta hasta que el autor cambie la
+  // portada — reutiliza la misma cola de "contenido en revisión" que ya
+  // existe, así el admin la vuelve a ver ahí cuando la revise de nuevo.
+  const ocultarPorPortada = async (r) => {
+    if (r.tipo !== "historia" || !r.contenido) return;
+    if (!window.confirm(`¿Ocultar "${r.contenido.title}" hasta que el autor cambie la portada? No se borra — queda pendiente de revisión.`)) return;
+    await supabase.from("stories").update({ estado: "pendiente_revision" }).eq("id", r.historia_id);
+    await notificar(r.reportado_por, `Tu reporte sobre la portada de "${r.contenido.title}" fue aprobado — la obra quedó oculta hasta que se resuelva.`);
+    await notificar(r.contenido.author_id, `Tu obra "${r.contenido.title}" quedó oculta temporalmente por un reporte sobre la portada. Subí una portada nueva desde "Datos de la obra" — un admin la revisa antes de que vuelva a publicarse.`);
+    await cerrarReporte(r.id);
+  };
+
+  const banear = async (r, horas) => {
+    const authorId = r.tipo === "historia" ? r.contenido?.author_id : r.contenido?.user_id;
+    if (!authorId) {
+      alert("No se puede banear: el autor es anónimo o no se encontró.");
+      return;
+    }
+    const esPermanente = horas === null;
+    const baneadoHasta = horas ? new Date(Date.now() + horas * 60 * 60 * 1000).toISOString() : PERMANENTE_ISO;
+
+    const { data: perfilActual } = await supabase
+      .from("profiles")
+      .select("infracciones")
+      .eq("id", authorId)
+      .maybeSingle();
+
+    await supabase
+      .from("profiles")
+      .update({
+        baneado_hasta: baneadoHasta,
+        infracciones: (perfilActual?.infracciones || 0) + 1,
+      })
+      .eq("id", authorId);
+
+    // El baneo real de Supabase Auth (bloquea el login en sí) solo se
+    // aplica al permanente — los temporales siguen siendo el mecanismo
+    // "suave" de siempre (puede seguir logueándose y leyendo).
+    if (esPermanente) {
+      const { error: errAuth } = await supabase.functions.invoke("ban-user-auth", {
+        body: { target_user_id: authorId, accion: "banear" },
+      });
+      if (errAuth) {
+        alert("El baneo se guardó en el sitio, pero falló al bloquear el login real. Revisá los logs de la función ban-user-auth.");
+      }
+    }
+
+    const duracionTexto = esPermanente ? "de forma permanente" : `por ${horas} horas`;
+    await notificar(r.reportado_por, `Tu reporte sobre "${tituloDe(r)}" fue aprobado — se aplicó una suspensión ${duracionTexto} a la cuenta responsable.`);
+    await notificar(authorId, `Tu cuenta fue suspendida ${duracionTexto} por infringir los Términos del Sitio (reporte sobre "${tituloDe(r)}").`);
+
+    await cerrarReporte(r.id);
+    cargarBaneados();
+  };
+
+  const aprobarEnRevision = async (item) => {
+    const tabla = item.tipo === "historia" ? "stories" : "capitulos";
+    await supabase.from(tabla).update({ estado: "publicado" }).eq("id", item.id);
+    cargarEnRevision();
+  };
+
+  const rechazarEnRevision = async (item) => {
+    const etiqueta = item.tipo === "historia" ? `"${item.title}"` : `"${item.title}" — capítulo ${item.numero}`;
+    if (!window.confirm(`¿Rechazar ${etiqueta}? Vuelve a borrador para que el autor lo revise.`)) return;
+    const tabla = item.tipo === "historia" ? "stories" : "capitulos";
+    await supabase.from(tabla).update({ estado: "borrador" }).eq("id", item.id);
+    cargarEnRevision();
+  };
+
+  const quitarBaneo = async (usuario) => {
+    await supabase.from("profiles").update({ baneado_hasta: null }).eq("id", usuario.id);
+
+    if (usuario.baneado_hasta === PERMANENTE_ISO) {
+      const { error: errAuth } = await supabase.functions.invoke("ban-user-auth", {
+        body: { target_user_id: usuario.id, accion: "desbanear" },
+      });
+      if (errAuth) {
+        alert("Se le quitó el baneo en el sitio, pero falló al reactivar el login real. Revisá los logs de la función ban-user-auth.");
+      }
+    }
+
+    cargarBaneados();
+    if (resultadosBusqueda) buscarUsuario();
+  };
+
+  const buscarUsuario = async () => {
+    const q = busqueda.trim();
+    if (!q) {
+      setResultadosBusqueda(null);
+      return;
+    }
+    setBuscando(true);
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, username, baneado_hasta, infracciones")
+      .ilike("username", `%${q}%`)
+      .limit(10);
+    setResultadosBusqueda(data || []);
+    setBuscando(false);
+  };
+
+  const agregarFondo = async (e) => {
+    e.preventDefault();
+    const monto = parseFloat(nuevoFondo.monto);
+    if (!monto || monto <= 0 || !nuevoFondo.descripcion.trim()) return;
+    setGuardandoFondo(true);
+    const { error } = await supabase.from("fondos_sitio").insert({
+      tipo: nuevoFondo.tipo,
+      monto,
+      descripcion: nuevoFondo.descripcion.trim(),
+    });
+    setGuardandoFondo(false);
+    if (!error) {
+      setNuevoFondo({ tipo: "ingreso", monto: "", descripcion: "" });
+      cargarFondos();
+    }
+  };
+
+  const borrarFondo = async (id) => {
+    if (!window.confirm("¿Borrar esta entrada? Afecta los totales públicos en Transparencia.")) return;
+    await supabase.from("fondos_sitio").delete().eq("id", id);
+    cargarFondos();
+  };
+
+  if (reportes === null) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm flex items-center justify-center px-5">
-        <div className="max-w-sm w-full text-center border border-[#7A2E2E] rounded-sm p-6 bg-[#1d1824]">
-          <ShieldAlert size={22} className="text-[#e08a8a] mx-auto mb-3" />
-          <p className="text-[#e08a8a] text-sm leading-relaxed mb-5" style={{ fontFamily: "Lora, serif" }}>
-            Esta obra está congelada por tener un reporte en revisión. No se puede editar hasta que el equipo
-            de moderación lo resuelva.
-          </p>
-          <button
-            onClick={onClose}
-            className="text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
-            style={{ fontFamily: "Lora, serif" }}
-          >
-            Entendido
-          </button>
-        </div>
+      <div className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pt-10 pb-24">
+        <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>Cargando reportes...</p>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0e0b13]/90 backdrop-blur-sm overflow-y-auto">
-      <div className="max-w-xl mx-auto px-5 py-10 sm:py-16">
-        <button
-          onClick={onClose}
-          className="mb-6 flex items-center gap-1.5 text-[#B08D57] hover:text-[#e8c9a3] transition-colors text-sm"
-          style={{ fontFamily: "Lora, serif" }}
-        >
-          <X size={16} /> Cancelar
-        </button>
-
-        <h2 className="text-[#EDE6D6] text-2xl mb-6 flex items-center gap-2" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
-          <Feather size={22} className="text-[#7C8B63]" />{" "}
-          {!isEditing ? "Nueva crónica" : esBorradorSinTerminar ? "Continuar escribiendo" : "Editar datos de la crónica"}
-        </h2>
-
-        <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
-          <div>
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Portada
-            </label>
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={openUploadWidget}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-[#4a3f52] text-[#B08D57] hover:text-[#e8c9a3] hover:border-[#B08D57] transition-colors text-sm"
-                style={{ fontFamily: "Lora, serif" }}
-              >
-                <ImagePlus size={15} /> {portadaUrl ? "Cambiar portada" : "Subir portada"}
-              </button>
-              {portadaUrl && (
-                <img
-                  src={portadaUrl}
-                  alt="Vista previa de la portada"
-                  className="w-14 h-14 rounded-sm object-cover border border-[#4a3f52]"
-                />
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Categoría
-            </label>
-            <div className="flex gap-2">
-              {[
-                { value: "corto", label: "Corto" },
-                { value: "novela", label: "Novela" },
-                { value: "fanfic", label: "Fanfic" },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setCategoria(opt.value)}
-                  className={`px-3 py-1.5 rounded-sm border text-sm transition-colors ${
-                    categoria === opt.value
-                      ? "border-[#B08D57] text-[#e8c9a3] bg-[#B08D57]/10"
-                      : "border-[#4a3f52] text-[#7d7389] hover:text-[#b8afc4]"
-                  }`}
-                  style={{ fontFamily: "Lora, serif" }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            {categoria === "fanfic" && (
-              <p className="text-[#7d7389] text-xs mt-2" style={{ fontFamily: "Lora, serif" }}>
-                Al publicar contenido de fanfic, tu opción de apoyo económico queda desactivada mientras esta
-                obra exista (Términos, Sección 5.3).
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Estado de emisión
-            </label>
-            <div className="flex gap-2">
-              {ESTADOS_PUBLICACION.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setEstadoPublicacion(opt.value)}
-                  className={`px-3 py-1.5 rounded-sm border text-sm transition-colors ${
-                    estadoPublicacion === opt.value
-                      ? "border-[#7C8B63] text-[#c3d1a8] bg-[#7C8B63]/10"
-                      : "border-[#4a3f52] text-[#7d7389] hover:text-[#b8afc4]"
-                  }`}
-                  style={{ fontFamily: "Lora, serif" }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="border border-[#4a3f52] rounded-sm p-3.5">
-            <label className="flex items-center gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={esAdulto}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  if (checked && !edad18YaConfirmada()) {
-                    // El autor también tiene que declarar su propia mayoría
-                    // de edad, no solo advertir a quien lee (ver 4.2/4.4).
-                    setMostrarGateAutor(true);
-                    return;
-                  }
-                  setEsAdulto(checked);
-                  if (!checked) setDeclaracion18(false);
-                }}
-                className="w-4 h-4 accent-[#7A2E2E]"
-              />
-              <span className="flex items-center gap-1.5 text-[#e8c9a3] text-sm" style={{ fontFamily: "Lora, serif" }}>
-                <ShieldAlert size={15} /> Contenido para mayores de edad (+18)
-              </span>
-            </label>
-
-            {esAdulto && (
-              <div className="mt-3 pl-6.5">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={declaracion18}
-                    onChange={(e) => setDeclaracion18(e.target.checked)}
-                    className="w-4 h-4 mt-0.5 shrink-0 accent-[#7A2E2E]"
-                  />
-                  <span className="text-[#b8afc4] text-xs leading-relaxed" style={{ fontFamily: "Lora, serif" }}>
-                    Declaro que esta obra no contiene lo prohibido en la Sección 4.3 de los Términos y
-                    Condiciones (contenido sexual que involucre a menores bajo cualquier justificación,
-                    contenido sexual no consensuado presentado de forma que lo promueva, ni violencia
-                    extrema gratuita fuera de contexto narrativo).
-                  </span>
-                </label>
-                <p className="text-[#7d7389] text-xs mt-2" style={{ fontFamily: "Lora, serif" }}>
-                  Cada capítulo nuevo de una obra +18 pasa por revisión antes de quedar visible (Sección 4.5).
-                  Además, tu opción de apoyo económico queda desactivada mientras esta obra exista.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Tags / géneros (separados por coma)
-            </label>
-            <input
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-              className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
-              style={{ fontFamily: "Lora, serif" }}
-              placeholder="fantasía, terror, viajes en el tiempo"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Título
-            </label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
-              style={{ fontFamily: "Fraunces, serif" }}
-              placeholder="El día que el cielo olvidó su nombre"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Frase icónica (el sello) — máx. 60 caracteres
-            </label>
-            <input
-              value={fraseIconica}
-              onChange={(e) => setFraseIconica(e.target.value.slice(0, 60))}
-              maxLength={60}
-              className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
-              style={{ fontFamily: "Lora, serif" }}
-              placeholder="ej. Donde el tiempo dejó de contar"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Adelanto (se muestra en la portada)
-            </label>
-            <textarea
-              value={excerpt}
-              onChange={(e) => setExcerpt(e.target.value)}
-              rows={2}
-              className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57] resize-none"
-              style={{ fontFamily: "Lora, serif" }}
-              placeholder="Dejalo vacío para generarlo automáticamente del texto"
-            />
-          </div>
-
-          {mostrarEditorDeTexto && (
-            <div>
-              <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-                Nombre del capítulo 1 (opcional)
-              </label>
-              <input
-                value={tituloCapitulo}
-                onChange={(e) => setTituloCapitulo(e.target.value)}
-                className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57] mb-4"
-                style={{ fontFamily: "Fraunces, serif" }}
-                placeholder='ej. Prólogo — vacío se muestra como "Capítulo 1"'
-              />
-
-              <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-                Texto del capítulo 1
-              </label>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                rows={12}
-                className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-[15px] text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57] leading-relaxed"
-                style={{ fontFamily: "Lora, serif" }}
-                placeholder="El manto pesaba como plomo fundido..."
-              />
-              <p className="text-[#7d7389] text-xs mt-1.5" style={{ fontFamily: "Lora, serif" }}>
-                {contarPalabras(content).toLocaleString("es")} palabras · {contarCaracteres(content).toLocaleString("es")} caracteres
-              </p>
-            </div>
-          )}
-
-          {!mostrarEditorDeTexto && (
-            <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
-              El texto de los capítulos se edita desde la lista de capítulos, en la pestaña Escribir.
-            </p>
-          )}
-
-          {err && <p className="text-[#e08a8a] text-sm">{err}</p>}
-
-          {mostrarEditorDeTexto ? (
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={(e) => submit(e, "borrador")}
-                disabled={saving}
-                className="flex-1 py-3 rounded-sm border border-[#4a3f52] hover:border-[#B08D57] disabled:opacity-50 text-[#b8afc4] hover:text-[#e8c9a3] font-medium tracking-wide transition-colors"
-                style={{ fontFamily: "Fraunces, serif" }}
-              >
-                {saving ? "Guardando..." : "Guardar borrador"}
-              </button>
-              <button
-                type="button"
-                onClick={(e) => submit(e, "publicado")}
-                disabled={saving}
-                className="flex-1 py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-50 text-[#EDE6D6] font-medium tracking-wide transition-colors"
-                style={{ fontFamily: "Fraunces, serif" }}
-              >
-                {saving ? "Guardando..." : esAdulto ? "Enviar a revisión" : isEditing ? "Guardar y publicar" : "Publicar crónica"}
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={(e) => submit(e, null)}
-              disabled={saving}
-              className="w-full py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-50 text-[#EDE6D6] font-medium tracking-wide transition-colors"
-              style={{ fontFamily: "Fraunces, serif" }}
-            >
-              {saving ? "Guardando..." : "Guardar cambios"}
-            </button>
-          )}
-        </form>
+    <div className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pt-10 pb-24">
+      <div className="flex items-center gap-3 mb-6">
+        <ShieldAlert size={18} className="text-[#7A2E2E]" />
+        <h1 className="text-[#EDE6D6] text-2xl" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>
+          Moderación
+        </h1>
       </div>
 
-      {mostrarGateAutor && (
-        <AgeGate
-          onConfirm={() => {
-            confirmarEdad18();
-            setEsAdulto(true);
-            setMostrarGateAutor(false);
-          }}
-          onDecline={() => setMostrarGateAutor(false)}
-        />
+      {err && <p className="text-[#e08a8a] text-sm mb-4">{err}</p>}
+
+      {/* ---------- Reportes pendientes ---------- */}
+      <div className="flex items-center gap-2 mb-4">
+        <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Reportes pendientes — {reportes.length}
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+
+      {reportes.length === 0 ? (
+        <p className="text-[#7d7389] italic mb-10" style={{ fontFamily: "Lora, serif" }}>
+          No hay reportes pendientes.
+        </p>
+      ) : (
+        <div className="space-y-4 mb-10">
+          {reportes.map((r) => {
+            const autorId = r.tipo === "historia" ? r.contenido?.author_id : r.contenido?.user_id;
+            const infracciones = autorId ? infraccionesPorUsuario[autorId] : undefined;
+            return (
+              <div key={r.id} className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-5">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span
+                    className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                      r.motivo === "contenido_prohibido"
+                        ? "bg-[#7A2E2E]/30 text-[#e08a8a]"
+                        : "bg-[#4a3f52] text-[#b8afc4]"
+                    }`}
+                  >
+                    {MOTIVO_LABEL[r.motivo] || r.motivo}
+                  </span>
+                  <span className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
+                    {r.tipo === "historia" ? "Historia" : "Comentario"} ·{" "}
+                    {new Date(r.created_at).toLocaleDateString("es-ES")}
+                  </span>
+                  {infracciones > 0 && (
+                    <span
+                      className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#7A2E2E]/20 text-[#e08a8a]"
+                      title="Cantidad de veces que este usuario ya fue baneado antes"
+                    >
+                      Reincidencia: {infracciones}
+                    </span>
+                  )}
+                  {r.ip_address && conteoPorIP[r.ip_address] > 1 && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#B08D57]/20 text-[#e8c9a3]"
+                      title="Posible patrón coordinado — revisar antes de actuar"
+                    >
+                      <Wifi size={10} /> {conteoPorIP[r.ip_address]} reportes desde esta IP
+                    </span>
+                  )}
+                </div>
+
+                {r.tipo === "historia" && r.contenido && (
+                  <p className="text-[#EDE6D6] text-sm mb-1" style={{ fontFamily: "Lora, serif" }}>
+                    <strong>{r.contenido.title}</strong> — por {r.contenido.author_name}
+                    {r.capitulo && (
+                      <span className="text-[#7d7389] text-xs ml-1">
+                        (capítulo {r.capitulo.numero}{r.capitulo.titulo ? `: ${r.capitulo.titulo}` : ""})
+                      </span>
+                    )}
+                    {r.contenido.estado === "pendiente_revision" && (
+                      <span className="text-[#B08D57] text-xs ml-2">(auto-ocultada por reportes)</span>
+                    )}
+                  </p>
+                )}
+                {r.tipo === "comentario" && r.contenido && (
+                  <p className="text-[#EDE6D6] text-sm mb-1" style={{ fontFamily: "Lora, serif" }}>
+                    <strong>{r.contenido.commenter_name}:</strong> "{r.contenido.text}"
+                  </p>
+                )}
+                {!r.contenido && (
+                  <p className="text-[#7d7389] text-sm italic mb-1" style={{ fontFamily: "Lora, serif" }}>
+                    El contenido original ya no existe.
+                  </p>
+                )}
+
+                {r.evidencia && (
+                  <p className="text-[#b8afc4] text-xs mb-1" style={{ fontFamily: "Lora, serif" }}>
+                    <strong className="text-[#7d7389]">Evidencia de quien reportó:</strong> {r.evidencia}
+                  </p>
+                )}
+                {r.evidencia_imagen_url && (
+                  <a
+                    href={r.evidencia_imagen_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mb-1"
+                  >
+                    <img
+                      src={r.evidencia_imagen_url}
+                      alt="Evidencia adjunta"
+                      className="w-14 h-14 rounded-sm object-cover border border-[#4a3f52] hover:border-[#B08D57] transition-colors"
+                    />
+                  </a>
+                )}
+                {r.contacto_email && (
+                  <p className="flex items-center gap-1.5 text-[#7d7389] text-xs mb-1" style={{ fontFamily: "Lora, serif" }}>
+                    <Mail size={11} /> {r.contacto_email}
+                  </p>
+                )}
+                {r.motivo === "plagio_interno" && (
+                  <p className="text-[#b8afc4] text-xs mb-3" style={{ fontFamily: "Lora, serif" }}>
+                    <strong className="text-[#7d7389]">Evidencia del acusado:</strong>{" "}
+                    {r.evidencia_acusado || <span className="italic text-[#7d7389]">todavía no respondió</span>}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-3 flex-wrap mt-3">
+                  <button
+                    onClick={() => eliminarContenido(r)}
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10 transition-colors"
+                    style={{ fontFamily: "Lora, serif" }}
+                  >
+                    <Trash2 size={12} /> Eliminar contenido
+                  </button>
+
+                  {r.tipo === "historia" && (
+                    <button
+                      onClick={() => ocultarPorPortada(r)}
+                      className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#B08D57] text-[#e8c9a3] hover:bg-[#B08D57]/10 transition-colors"
+                      style={{ fontFamily: "Lora, serif" }}
+                      title="No borra la obra — la oculta hasta que el autor cambie la portada"
+                    >
+                      <ImagePlus size={12} /> Ocultar por portada
+                    </button>
+                  )}
+
+                  {DURACIONES.map((d) => (
+                    <button
+                      key={d.label}
+                      onClick={() => {
+                        if (d.horas === null && !window.confirm("Baneo permanente: además de bloquear publicar/comentar, esto le va a impedir volver a iniciar sesión. ¿Confirmás?")) return;
+                        banear(r, d.horas);
+                      }}
+                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border transition-colors ${
+                        d.horas === null
+                          ? "border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10"
+                          : "border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3]"
+                      }`}
+                      style={{ fontFamily: "Lora, serif" }}
+                    >
+                      <Ban size={12} /> Banear {d.label}
+                    </button>
+                  ))}
+
+                  <button
+                    onClick={() => marcarResuelto(r)}
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors ml-auto"
+                    style={{ fontFamily: "Lora, serif" }}
+                  >
+                    <CheckCircle2 size={12} /> Marcar resuelto
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
+
+      {/* ---------- Contenido en revisión ---------- */}
+      <div className="flex items-center gap-2 mb-4">
+        <Eye size={13} className="text-[#B08D57]" />
+        <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Contenido en revisión — {enRevision === null ? "…" : enRevision.length}
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+
+      {enRevision === null ? (
+        <p className="text-[#7d7389] mb-10" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
+      ) : enRevision.length === 0 ? (
+        <p className="text-[#7d7389] italic mb-10" style={{ fontFamily: "Lora, serif" }}>
+          No hay contenido esperando revisión.
+        </p>
+      ) : (
+        <div className="space-y-3 mb-10">
+          {enRevision.map((item) => (
+            <div
+              key={`${item.tipo}-${item.id}`}
+              className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-4 flex items-center gap-3 flex-wrap"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-[#EDE6D6] text-sm" style={{ fontFamily: "Lora, serif" }}>
+                  <strong>{item.title}</strong>
+                  {item.tipo === "capitulo" && ` — capítulo ${item.numero}${item.capituloTitulo ? `: ${item.capituloTitulo}` : ""}`}
+                  {" "}— por {item.author_name}
+                  {item.es_adulto && (
+                    <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-[#7A2E2E]/30 text-[#e08a8a] ml-2">
+                      +18
+                    </span>
+                  )}
+                </p>
+                <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
+                  Enviad{item.tipo === "capitulo" ? "o" : "a"} el {new Date(item.created_at).toLocaleDateString("es-ES")}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => aprobarEnRevision(item)}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  <CheckCircle2 size={12} /> Aprobar y publicar
+                </button>
+                <button
+                  onClick={() => rechazarEnRevision(item)}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10 transition-colors"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  <Trash2 size={12} /> Rechazar
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ---------- Usuarios baneados ---------- */}
+      <div className="flex items-center gap-2 mb-4">
+        <UserX size={13} className="text-[#B08D57]" />
+        <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Usuarios baneados
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+
+      <div className="relative mb-4">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7d7389]" />
+        <input
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && buscarUsuario()}
+          placeholder="Buscar usuario baneado por nombre de usuario..."
+          className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm pl-9 pr-20 py-2.5 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+          style={{ fontFamily: "Lora, serif" }}
+        />
+        <button
+          onClick={buscarUsuario}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-xs px-2.5 py-1 rounded-sm border border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3] transition-colors"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          {buscando ? "..." : "Buscar"}
+        </button>
+      </div>
+
+      {resultadosBusqueda !== null && (
+        <div className="mb-4">
+          <p className="text-[#7d7389] text-xs mb-2" style={{ fontFamily: "Lora, serif" }}>
+            Resultados de la búsqueda:
+          </p>
+          {resultadosBusqueda.length === 0 ? (
+            <p className="text-[#7d7389] italic text-sm" style={{ fontFamily: "Lora, serif" }}>
+              No se encontró ningún usuario con ese nombre.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {resultadosBusqueda.map((u) => (
+                <FilaUsuarioBaneado key={u.id} usuario={u} onQuitarBaneo={quitarBaneo} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {baneados === null ? (
+        <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
+      ) : baneados.length === 0 ? (
+        <p className="text-[#7d7389] italic" style={{ fontFamily: "Lora, serif" }}>
+          No hay usuarios baneados actualmente.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {baneados.map((u) => (
+            <FilaUsuarioBaneado key={u.id} usuario={u} onQuitarBaneo={quitarBaneo} />
+          ))}
+        </div>
+      )}
+
+      {/* ---------- Fondos del sitio ---------- */}
+      <div className="flex items-center gap-2 mb-4 mt-10">
+        <Coins size={13} className="text-[#B08D57]" />
+        <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Fondos del sitio
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+      <p className="text-[#7d7389] text-xs mb-4" style={{ fontFamily: "Lora, serif" }}>
+        Esto alimenta los totales públicos que se ven en /transparencia. Usá "ingreso" para donaciones
+        recibidas y "gasto" para en qué se usaron.
+      </p>
+
+      <form onSubmit={agregarFondo} className="flex flex-wrap gap-2 mb-4">
+        <select
+          value={nuevoFondo.tipo}
+          onChange={(e) => setNuevoFondo((f) => ({ ...f, tipo: e.target.value }))}
+          className="bg-[#1d1824] border border-[#4a3f52] rounded-sm px-2.5 py-2 text-sm text-[#EDE6D6] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          <option value="ingreso">Ingreso</option>
+          <option value="gasto">Gasto</option>
+        </select>
+        <input
+          type="number"
+          min="0.01"
+          step="0.01"
+          value={nuevoFondo.monto}
+          onChange={(e) => setNuevoFondo((f) => ({ ...f, monto: e.target.value }))}
+          placeholder="Monto"
+          className="w-28 bg-[#1d1824] border border-[#4a3f52] rounded-sm px-2.5 py-2 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+          style={{ fontFamily: "Lora, serif" }}
+        />
+        <input
+          value={nuevoFondo.descripcion}
+          onChange={(e) => setNuevoFondo((f) => ({ ...f, descripcion: e.target.value }))}
+          placeholder="Descripción (ej. donación de un lector, hosting del mes)"
+          className="flex-1 min-w-[180px] bg-[#1d1824] border border-[#4a3f52] rounded-sm px-2.5 py-2 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+          style={{ fontFamily: "Lora, serif" }}
+        />
+        <button
+          type="submit"
+          disabled={guardandoFondo || !nuevoFondo.monto || !nuevoFondo.descripcion.trim()}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-40 transition-colors text-sm text-[#EDE6D6]"
+          style={{ fontFamily: "Lora, serif" }}
+        >
+          <Plus size={14} /> Agregar
+        </button>
+      </form>
+
+      {fondos === null ? (
+        <p className="text-[#7d7389]" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
+      ) : fondos.length === 0 ? (
+        <p className="text-[#7d7389] italic" style={{ fontFamily: "Lora, serif" }}>
+          Todavía no hay entradas cargadas.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {fondos.map((f) => (
+            <div key={f.id} className="flex items-center justify-between gap-3 rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 px-3.5 py-2.5">
+              <div className="min-w-0 flex-1 flex items-center gap-2">
+                <span
+                  className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0 ${
+                    f.tipo === "ingreso" ? "bg-[#7C8B63]/20 text-[#c3d1a8]" : "bg-[#7A2E2E]/20 text-[#e08a8a]"
+                  }`}
+                >
+                  {f.tipo}
+                </span>
+                <p className="text-[#c9c1d4] text-sm truncate" style={{ fontFamily: "Lora, serif" }}>
+                  {f.descripcion} — {Number(f.monto).toLocaleString("es-PY")}
+                </p>
+              </div>
+              <button
+                onClick={() => borrarFondo(f.id)}
+                className="text-[#7d7389] hover:text-[#e08a8a] transition-colors shrink-0"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilaUsuarioBaneado({ usuario, onQuitarBaneo }) {
+  const restante = tiempoRestante(usuario.baneado_hasta);
+  return (
+    <div className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-3.5 flex items-center gap-3 flex-wrap">
+      <div className="min-w-0 flex-1">
+        <p className="text-[#EDE6D6] text-sm" style={{ fontFamily: "Lora, serif" }}>
+          {usuario.username || "(sin nombre de usuario)"}
+        </p>
+        <div className="flex items-center gap-3 mt-0.5">
+          <span className="flex items-center gap-1 text-[#e8c9a3] text-xs" style={{ fontFamily: "Lora, serif" }}>
+            <Clock3 size={11} /> {restante || "vencido"}
+          </span>
+          {usuario.infracciones > 0 && (
+            <span
+              className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#7A2E2E]/20 text-[#e08a8a]"
+              title="Cantidad de veces que este usuario ya fue baneado"
+            >
+              Reincidencia: {usuario.infracciones}
+            </span>
+          )}
+        </div>
+      </div>
+      <button
+        onClick={() => onQuitarBaneo(usuario)}
+        className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors"
+        style={{ fontFamily: "Lora, serif" }}
+      >
+        <CheckCircle2 size={12} /> Quitar baneo
+      </button>
     </div>
   );
 }
