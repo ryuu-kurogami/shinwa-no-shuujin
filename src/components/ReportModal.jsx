@@ -25,6 +25,7 @@ export default function ReportModal({ user, historiaId, comentarioId, capituloId
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [enviado, setEnviado] = useState(false);
+  const [codigoSeguimiento, setCodigoSeguimiento] = useState(null);
   const [captchaToken, setCaptchaToken] = useState(null);
   const widgetRef = useRef(null);
   const turnstileId = useRef(null);
@@ -84,7 +85,7 @@ export default function ReportModal({ user, historiaId, comentarioId, capituloId
     setSaving(true);
     setErr("");
     try {
-      const { error } = await supabase.functions.invoke("submit-report", {
+      const { data, error } = await supabase.functions.invoke("submit-report", {
         body: {
           token: captchaToken,
           historia_id: historiaId || null,
@@ -97,6 +98,7 @@ export default function ReportModal({ user, historiaId, comentarioId, capituloId
         },
       });
       if (error) throw error;
+      if (data?.codigo) setCodigoSeguimiento(data.codigo);
       setEnviado(true);
     } catch (error) {
       // Igual que en comentarios: leer el body real del error (rate limit,
@@ -133,9 +135,27 @@ export default function ReportModal({ user, historiaId, comentarioId, capituloId
         )}
 
         {enviado ? (
-          <p className="text-[#7C8B63] text-sm" style={{ fontFamily: "Lora, serif" }}>
-            Reporte enviado. Gracias por ayudar a mantener el archivo seguro.
-          </p>
+          <div>
+            <p className="text-[#7C8B63] text-sm mb-4" style={{ fontFamily: "Lora, serif" }}>
+              Reporte enviado. Gracias por ayudar a mantener el archivo seguro.
+            </p>
+            {codigoSeguimiento && (
+              <div className="border border-[#B08D57] rounded-sm p-4">
+                <p className="text-[#7d7389] text-xs mb-2" style={{ fontFamily: "Lora, serif" }}>
+                  Guardá este código si querés hacer seguimiento — no vas a poder recuperarlo después:
+                </p>
+                <p
+                  className="text-[#e8c9a3] text-xl tracking-[0.15em] text-center py-2 select-all"
+                  style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}
+                >
+                  {codigoSeguimiento}
+                </p>
+                <p className="text-[#7d7389] text-[11px]" style={{ fontFamily: "Lora, serif" }}>
+                  Podés consultarlo desde "Verificar mi reporte", al pie de cualquier página.
+                </p>
+              </div>
+            )}
+          </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
             <div>

@@ -22,6 +22,27 @@ function jsonResponse(body: unknown, status: number) {
   })
 }
 
+// Código corto para que un reportante anónimo pueda hacer seguimiento sin
+// cuenta. Alfabeto sin 0/O/1/I para evitar confusiones al copiarlo a mano.
+// Se guarda solo el hash (SHA-256) — igual que una contraseña, el código en
+// texto plano no queda en ningún lado del lado del servidor después de esta
+// respuesta.
+const ALFABETO_CODIGO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function generarCodigoSeguimiento(): string {
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => ALFABETO_CODIGO[b % ALFABETO_CODIGO.length]).join('')
+}
+
+async function hashCodigo(codigo: string): Promise<string> {
+  const data = new TextEncoder().encode(codigo)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
 function obtenerIp(req: Request): string {
   const forwarded = req.headers.get('x-forwarded-for')
   if (forwarded) return forwarded.split(',')[0].trim()
@@ -157,6 +178,15 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Correo de contacto inválido' }, 400)
     }
 
+    // Código de seguimiento — solo para reportes anónimos, un logueado ya
+    // tiene su cuenta como identidad para consultar el estado después.
+    let codigoPlano: string | null = null
+    let codigoHash: string | null = null
+    if (!verifiedUserId) {
+      codigoPlano = generarCodigoSeguimiento()
+      codigoHash = await hashCodigo(codigoPlano)
+    }
+
     const { data, error } = await supabase.from('reportes').insert({
       historia_id: historia_id || null,
       comentario_id: comentario_id || null,
@@ -167,13 +197,16 @@ Deno.serve(async (req: Request) => {
       evidencia_imagen_url: typeof evidencia_imagen_url === 'string' ? evidencia_imagen_url.trim() || null : null,
       contacto_email: typeof contacto_email === 'string' ? contacto_email.trim() || null : null,
       ip_address: ip !== 'desconocida' ? ip : null,
+      codigo_seguimiento_hash: codigoHash,
     })
 
     if (error) {
       return jsonResponse({ error: error.message }, 400)
     }
 
-    return jsonResponse({ data }, 200)
+    // El código en texto plano solo existe en esta respuesta — después de
+    // esto, ni siquiera este servidor lo vuelve a tener.
+    return jsonResponse({ data, codigo: codigoPlano }, 200)
   } catch (_err) {
     return jsonResponse({ error: 'Error interno' }, 500)
   }

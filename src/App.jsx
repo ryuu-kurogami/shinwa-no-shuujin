@@ -16,6 +16,7 @@ import AgeGate, { edad18YaConfirmada, confirmarEdad18 } from "./components/AgeGa
 import UsernameGate from "./components/UsernameGate";
 import TransparenciaPage from "./components/TransparenciaPage";
 import DeletionPendingGate from "./components/DeletionPendingGate";
+import BanApelacionGate from "./components/BanApelacionGate";
 import SiteFooter from "./components/SiteFooter";
 
 const CATEGORIAS = [
@@ -48,6 +49,7 @@ export default function App() {
   const [accionPendienteDeEdad, setAccionPendienteDeEdad] = useState(null); // historia | "seccion" | null
   const [necesitaUsername, setNecesitaUsername] = useState(false);
   const [eliminarEn, setEliminarEn] = useState(null);
+  const [baneoActivo, setBaneoActivo] = useState(null); // { hasta, motivo, apelacionEstado } | null
   const isAdmin = user && ADMIN_EMAILS.includes((user.email || "").toLowerCase());
 
   // Punto único de apertura de una historia: si es contenido +18 y todavía
@@ -107,16 +109,26 @@ export default function App() {
     if (!user) {
       setNecesitaUsername(false);
       setEliminarEn(null);
+      setBaneoActivo(null);
       return;
     }
     supabase
       .from("profiles")
-      .select("username, eliminar_en")
+      .select("username, eliminar_en, baneado_hasta, motivo_baneo, apelacion_estado")
       .eq("id", user.id)
       .maybeSingle()
       .then(({ data }) => {
         setNecesitaUsername(!data?.username);
         setEliminarEn(data?.eliminar_en || null);
+        if (data?.baneado_hasta && new Date(data.baneado_hasta) > new Date()) {
+          setBaneoActivo({
+            hasta: data.baneado_hasta,
+            motivo: data.motivo_baneo || null,
+            apelacionEstado: data.apelacion_estado || null,
+          });
+        } else {
+          setBaneoActivo(null);
+        }
       });
   }, [user]);
 
@@ -329,7 +341,16 @@ export default function App() {
       {umbralCruzado && user && eliminarEn && new Date(eliminarEn) > new Date() && (
         <DeletionPendingGate userId={user.id} eliminarEn={eliminarEn} onCancelado={() => setEliminarEn(null)} />
       )}
-      {umbralCruzado && user && !eliminarEn && necesitaUsername && (
+      {umbralCruzado && user && !eliminarEn && baneoActivo && (
+        <BanApelacionGate
+          userId={user.id}
+          baneadoHasta={baneoActivo.hasta}
+          motivoBaneo={baneoActivo.motivo}
+          apelacionEstado={baneoActivo.apelacionEstado}
+          onSignOut={() => supabase.auth.signOut()}
+        />
+      )}
+      {umbralCruzado && user && !eliminarEn && !baneoActivo && necesitaUsername && (
         <UsernameGate userId={user.id} onDone={() => setNecesitaUsername(false)} />
       )}
       {accionPendienteDeEdad && <AgeGate onConfirm={confirmarYContinuar} onDecline={cancelarAccionPendiente} />}
@@ -456,13 +477,6 @@ export default function App() {
               )}
             </main>
 
-            <footer className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pb-14">
-              <div className="h-px bg-[#4a3f52] mb-5" />
-              <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
-                Las historias y los comentarios públicos son visibles para cualquiera que abra esta página. Los
-                comentarios privados solo los ve el autor de la historia.
-              </p>
-            </footer>
           </>
         )}
 

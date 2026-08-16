@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { ShieldAlert, Trash2, Ban, CheckCircle2, ExternalLink, Clock3, Search, UserX, Eye, Coins, Plus, ImagePlus, Mail, Wifi } from "lucide-react";
+import { ShieldAlert, Trash2, Ban, CheckCircle2, ExternalLink, Clock3, Search, UserX, Eye, Coins, Plus, ImagePlus, Mail, Wifi, MessageSquareWarning } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const MOTIVO_LABEL = {
@@ -37,8 +37,11 @@ function tiempoRestante(baneadoHasta) {
 export default function ModeracionPage() {
   const [reportes, setReportes] = useState(null);
   const [infraccionesPorUsuario, setInfraccionesPorUsuario] = useState({});
+  const [escaladoPorUsuario, setEscaladoPorUsuario] = useState({}); // { [userId]: ya_tuvo_baneo_30_dias }
   const [conteoPorIP, setConteoPorIP] = useState({});
+  const [motivoBaneoPorReporte, setMotivoBaneoPorReporte] = useState({}); // { [reporteId]: texto }
   const [enRevision, setEnRevision] = useState(null);
+  const [apelaciones, setApelaciones] = useState(null);
   const [baneados, setBaneados] = useState(null);
   const [busqueda, setBusqueda] = useState("");
   const [resultadosBusqueda, setResultadosBusqueda] = useState(null);
@@ -117,12 +120,34 @@ export default function ModeracionPage() {
     if (idsInvolucrados.length > 0) {
       const { data: perfiles } = await supabase
         .from("profiles")
-        .select("id, infracciones")
+        .select("id, infracciones, ya_tuvo_baneo_30_dias")
         .in("id", idsInvolucrados);
       const mapa = {};
-      (perfiles || []).forEach((p) => (mapa[p.id] = p.infracciones || 0));
+      const mapaEscalado = {};
+      (perfiles || []).forEach((p) => {
+        mapa[p.id] = p.infracciones || 0;
+        mapaEscalado[p.id] = p.ya_tuvo_baneo_30_dias || false;
+      });
       setInfraccionesPorUsuario(mapa);
+      setEscaladoPorUsuario(mapaEscalado);
     }
+  }, []);
+
+  // Apelaciones pendientes — cuentas actualmente baneadas que pidieron
+  // revisión (Términos, Sección 7.4). Se resuelve igual que el resto de
+  // la cola: mantener o levantar el baneo.
+  const cargarApelaciones = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, username, baneado_hasta, motivo_baneo, apelacion_texto, apelacion_creada_en")
+      .eq("apelacion_estado", "pendiente")
+      .order("apelacion_creada_en", { ascending: true });
+
+    if (error) {
+      setErr("No se pudieron cargar las apelaciones.");
+      return;
+    }
+    setApelaciones(data || []);
   }, []);
 
   const cargarEnRevision = useCallback(async () => {
@@ -206,9 +231,10 @@ export default function ModeracionPage() {
   useEffect(() => {
     cargar();
     cargarEnRevision();
+    cargarApelaciones();
     cargarBaneados();
     cargarFondos();
-  }, [cargar, cargarEnRevision, cargarBaneados, cargarFondos]);
+  }, [cargar, cargarEnRevision, cargarApelaciones, cargarBaneados, cargarFondos]);
 
   // Notificación in-app simple — si userId es null (reportante anónimo,
   // o contenido sin autor identificable), no hace nada.
@@ -262,12 +288,29 @@ export default function ModeracionPage() {
       alert("No se puede banear: el autor es anónimo o no se encontró.");
       return;
     }
+    const motivoTexto = (motivoBaneoPorReporte[r.id] || "").trim();
+    if (!motivoTexto) {
+      alert("Escribí el motivo específico que va a ver el infractor antes de aplicar el baneo.");
+      return;
+    }
+
     const esPermanente = horas === null;
+
+    // Escalado: si ya tocó el tope de 30 días y esto no es permanente, se
+    // pide una confirmación explícita — nunca se fuerza ni se bloquea el
+    // botón, es el moderador quien decide igual.
+    if (escaladoPorUsuario[authorId] && !esPermanente) {
+      const continuar = window.confirm(
+        "Esta cuenta ya tuvo un baneo de 30 días antes. Según el criterio del sitio, la próxima suspensión debería ser permanente. ¿Seguís igual con esta duración más corta?"
+      );
+      if (!continuar) return;
+    }
+
     const baneadoHasta = horas ? new Date(Date.now() + horas * 60 * 60 * 1000).toISOString() : PERMANENTE_ISO;
 
     const { data: perfilActual } = await supabase
       .from("profiles")
-      .select("infracciones")
+      .select("infracciones, ya_tuvo_baneo_30_dias")
       .eq("id", authorId)
       .maybeSingle();
 
@@ -276,6 +319,12 @@ export default function ModeracionPage() {
       .update({
         baneado_hasta: baneadoHasta,
         infracciones: (perfilActual?.infracciones || 0) + 1,
+        motivo_baneo: motivoTexto,
+        ya_tuvo_baneo_30_dias: perfilActual?.ya_tuvo_baneo_30_dias || horas === 720 || esPermanente,
+        // Se limpia cualquier apelación anterior — este es un baneo nuevo.
+        apelacion_estado: null,
+        apelacion_texto: null,
+        apelacion_creada_en: null,
       })
       .eq("id", authorId);
 
@@ -311,6 +360,44 @@ export default function ModeracionPage() {
     const tabla = item.tipo === "historia" ? "stories" : "capitulos";
     await supabase.from(tabla).update({ estado: "borrador" }).eq("id", item.id);
     cargarEnRevision();
+  };
+
+  // Resolver una apelación manteniendo el baneo — se limpia solo el estado
+  // de apelación, el baneo sigue activo tal cual estaba.
+  const mantenerBaneoApelado = async (apelacion) => {
+    await supabase
+      .from("profiles")
+      .update({ apelacion_estado: "rechazada", apelacion_texto: null })
+      .eq("id", apelacion.id);
+    await notificar(apelacion.id, "Revisamos tu apelación — la suspensión se mantiene.");
+    cargarApelaciones();
+  };
+
+  // Resolver una apelación levantando el baneo por completo.
+  const levantarBaneoApelado = async (apelacion) => {
+    if (!window.confirm(`¿Levantar la suspensión de "${apelacion.username || "este usuario"}"?`)) return;
+    await supabase
+      .from("profiles")
+      .update({
+        baneado_hasta: null,
+        motivo_baneo: null,
+        apelacion_estado: null,
+        apelacion_texto: null,
+      })
+      .eq("id", apelacion.id);
+
+    if (apelacion.baneado_hasta === PERMANENTE_ISO) {
+      const { error: errAuth } = await supabase.functions.invoke("ban-user-auth", {
+        body: { target_user_id: apelacion.id, accion: "desbanear" },
+      });
+      if (errAuth) {
+        alert("Se le quitó el baneo en el sitio, pero falló al reactivar el login real. Revisá los logs de la función ban-user-auth.");
+      }
+    }
+
+    await notificar(apelacion.id, "Revisamos tu apelación — la suspensión se levantó.");
+    cargarApelaciones();
+    cargarBaneados();
   };
 
   const quitarBaneo = async (usuario) => {
@@ -513,6 +600,28 @@ export default function ModeracionPage() {
                     </button>
                   )}
 
+                  {(() => {
+                    const autorIdParaBaneo = r.tipo === "historia" ? r.contenido?.author_id : r.contenido?.user_id;
+                    const duracionSugerida =
+                      r.motivo === "contenido_prohibido" || r.motivo === "plagio_interno" ? "30 días" : "3 días";
+                    if (!autorIdParaBaneo) return null;
+                    return (
+                      <div className="w-full mt-2 mb-1">
+                        <input
+                          value={motivoBaneoPorReporte[r.id] || ""}
+                          onChange={(e) => setMotivoBaneoPorReporte((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                          placeholder="Motivo específico que va a ver el infractor (obligatorio para banear)"
+                          maxLength={300}
+                          className="w-full bg-[#0f0c14] border border-[#4a3f52] rounded-sm px-2.5 py-1.5 text-xs text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57]"
+                          style={{ fontFamily: "Lora, serif" }}
+                        />
+                        <p className="text-[#7d7389] text-[10px] mt-1 flex items-center gap-1" style={{ fontFamily: "Lora, serif" }}>
+                          <MessageSquareWarning size={10} /> Duración sugerida para este motivo: {duracionSugerida}
+                        </p>
+                      </div>
+                    );
+                  })()}
+
                   {DURACIONES.map((d) => (
                     <button
                       key={d.label}
@@ -523,6 +632,9 @@ export default function ModeracionPage() {
                       className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border transition-colors ${
                         d.horas === null
                           ? "border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10"
+                          : ((d.label === "30 días" && (r.motivo === "contenido_prohibido" || r.motivo === "plagio_interno")) ||
+                              (d.label === "3 días" && r.motivo !== "contenido_prohibido" && r.motivo !== "plagio_interno"))
+                          ? "border-[#B08D57] text-[#e8c9a3]"
                           : "border-[#4a3f52] text-[#b8afc4] hover:border-[#B08D57] hover:text-[#e8c9a3]"
                       }`}
                       style={{ fontFamily: "Lora, serif" }}
@@ -596,6 +708,60 @@ export default function ModeracionPage() {
                   style={{ fontFamily: "Lora, serif" }}
                 >
                   <Trash2 size={12} /> Rechazar
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ---------- Apelaciones pendientes ---------- */}
+      <div className="flex items-center gap-2 mb-4">
+        <MessageSquareWarning size={13} className="text-[#B08D57]" />
+        <h2 className="text-[#B08D57] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Apelaciones pendientes {apelaciones !== null ? `— ${apelaciones.length}` : ""}
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+
+      {apelaciones === null ? (
+        <p className="text-[#7d7389] mb-10" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
+      ) : apelaciones.length === 0 ? (
+        <p className="text-[#7d7389] italic mb-10" style={{ fontFamily: "Lora, serif" }}>
+          No hay apelaciones pendientes.
+        </p>
+      ) : (
+        <div className="space-y-4 mb-10">
+          {apelaciones.map((a) => (
+            <div key={a.id} className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-5">
+              <p className="text-[#EDE6D6] text-sm mb-1" style={{ fontFamily: "Lora, serif" }}>
+                <strong>{a.username || "(sin nombre de usuario)"}</strong>{" "}
+                <span className="text-[#7d7389] text-xs">
+                  · suspendido hasta {a.baneado_hasta?.startsWith("9999") ? "siempre (permanente)" : new Date(a.baneado_hasta).toLocaleDateString("es-ES")}
+                </span>
+              </p>
+              {a.motivo_baneo && (
+                <p className="text-[#b8afc4] text-xs mb-2" style={{ fontFamily: "Lora, serif" }}>
+                  <strong className="text-[#7d7389]">Motivo original:</strong> {a.motivo_baneo}
+                </p>
+              )}
+              <p className="text-[#e8c9a3] text-sm mb-3 border-l-2 border-[#B08D57]/50 pl-3" style={{ fontFamily: "Lora, serif" }}>
+                {a.apelacion_texto}
+              </p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => levantarBaneoApelado(a)}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7C8B63] text-[#c3d1a8] hover:bg-[#7C8B63]/10 transition-colors"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  <CheckCircle2 size={12} /> Levantar baneo
+                </button>
+                <button
+                  onClick={() => mantenerBaneoApelado(a)}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-sm border border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10 transition-colors"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  <Trash2 size={12} /> Mantener baneo
                 </button>
               </div>
             </div>
