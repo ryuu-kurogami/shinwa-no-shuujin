@@ -22,6 +22,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState("");
   const [captchaToken, setCaptchaToken] = useState(null);
+  const [turnstileActivo, setTurnstileActivo] = useState(false);
   const [reportandoComentario, setReportandoComentario] = useState(null);
   const widgetRef = useRef(null);
   const turnstileId = useRef(null);
@@ -123,9 +124,12 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
 
   // Renderiza el widget de Cloudflare Turnstile (captcha) — uno solo,
   // compartido entre el formulario principal y cualquier respuesta que se
-  // esté escribiendo.
+  // esté escribiendo. Se activa recién cuando el usuario hace foco en un
+  // textarea de comentario, no apenas se entra al capítulo — si quedara
+  // siempre activo, su z-index (pensado para estar por encima de todo)
+  // se cuela por encima de otros modales, como el de Reportar.
   useEffect(() => {
-    if (!TURNSTILE_SITE_KEY || !window.turnstile || !widgetRef.current) return;
+    if (!turnstileActivo || !TURNSTILE_SITE_KEY || !window.turnstile || !widgetRef.current) return;
     turnstileId.current = window.turnstile.render(widgetRef.current, {
       sitekey: TURNSTILE_SITE_KEY,
       theme: "dark",
@@ -138,7 +142,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
         window.turnstile.remove(turnstileId.current);
       }
     };
-  }, []);
+  }, [turnstileActivo]);
 
   const resetTurnstile = () => {
     setCaptchaToken(null);
@@ -300,6 +304,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onFocus={() => setTurnstileActivo(true)}
           placeholder="Dejá tu eco sobre esta historia..."
           rows={2}
           maxLength={1000}
@@ -320,7 +325,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
           <Lock size={12} /> Enviar solo al autor (privado, nadie más lo ve)
         </label>
 
-        {TURNSTILE_SITE_KEY && <div ref={widgetRef} />}
+        {TURNSTILE_SITE_KEY && turnstileActivo && <div ref={widgetRef} />}
 
         <div className="flex justify-end">
           <button
@@ -359,6 +364,7 @@ export default function CommentThread({ capituloId, storyAuthorId, user }) {
                       <textarea
                         value={textoRespuesta}
                         onChange={(e) => setTextoRespuesta(e.target.value)}
+                        onFocus={() => setTurnstileActivo(true)}
                         placeholder={`Responder a ${c.commenter_name}...`}
                         rows={2}
                         maxLength={1000}
