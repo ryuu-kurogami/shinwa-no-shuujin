@@ -9,9 +9,10 @@ import {
   Megaphone,
   Trash2,
   Clock3,
-  ExternalLink,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { FaFacebook } from "react-icons/fa";
+import { SiDiscord, SiReddit } from "react-icons/si";
 
 // --- Configuración que Santi puede ajustar sin tocar el resto del archivo ---
 
@@ -24,9 +25,9 @@ const MONEDA = "₲";
 // Completá los links reales cuando tengas las cuentas creadas — mientras
 // una red no tenga url, no se muestra.
 const REDES = [
-  { label: "Facebook", url: "https://www.facebook.com/profile.php?id=61593569725503" },
-  { label: "Discord", url: "https://discord.gg/VR68yTfAt" },
-  { label: "Reddit", url: "https://www.reddit.com/r/Shinwa_no_Shuujin/" },
+  { label: "Facebook", url: "https://www.facebook.com/profile.php?id=61593569725503", icono: FaFacebook },
+  { label: "Discord", url: "https://discord.gg/VR68yTfAt", icono: SiDiscord },
+  { label: "Reddit", url: "https://www.reddit.com/r/Shinwa_no_Shuujin/", icono: SiReddit },
 ];
 
 const KOFI_URL = "https://ko-fi.com/shinwanoshuujin";
@@ -289,18 +290,21 @@ export default function TransparenciaPage({ onBack, isAdmin }) {
             </p>
           ) : (
             <div className="flex flex-col gap-2">
-              {redesConLink.map((r) => (
-                <a
-                  key={r.label}
-                  href={r.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-[#b8afc4] hover:text-[#e8c9a3] text-sm transition-colors"
-                  style={{ fontFamily: "Lora, serif" }}
-                >
-                  <ExternalLink size={13} /> {r.label}
-                </a>
-              ))}
+              {redesConLink.map((r) => {
+                const Icono = r.icono;
+                return (
+                  <a
+                    key={r.label}
+                    href={r.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-[#b8afc4] hover:text-[#e8c9a3] text-sm transition-colors"
+                    style={{ fontFamily: "Lora, serif" }}
+                  >
+                    <Icono size={14} /> {r.label}
+                  </a>
+                );
+              })}
             </div>
           )}
         </div>
