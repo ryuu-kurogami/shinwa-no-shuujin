@@ -12,6 +12,7 @@ export default function BanApelacionGate({
   baneadoHasta,
   motivoBaneo,
   apelacionEstado,
+  bloqueoLoginEn,
   onSignOut,
 }) {
   const [texto, setTexto] = useState("");
@@ -39,6 +40,7 @@ export default function BanApelacionGate({
         apelacion_estado: "pendiente",
         apelacion_texto: texto.trim(),
         apelacion_creada_en: new Date().toISOString(),
+        bloqueo_login_en: null, // pausa el plazo mientras se revisa
       })
       .eq("id", userId);
     setEnviando(false);
@@ -75,29 +77,38 @@ export default function BanApelacionGate({
             unos días.
           </p>
         ) : (
-          <form onSubmit={enviarApelacion} className="mb-7 text-left">
-            <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
-              Si creés que esto es un error, contá por qué
-            </label>
-            <textarea
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-              rows={4}
-              maxLength={1500}
-              className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57] resize-none mb-3"
-              style={{ fontFamily: "Lora, serif" }}
-              placeholder="Explicá tu situación con el mayor detalle posible..."
-            />
-            {err && <p className="text-[#e08a8a] text-xs mb-2">{err}</p>}
-            <button
-              type="submit"
-              disabled={enviando || !texto.trim()}
-              className="w-full flex items-center justify-center gap-1.5 py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-40 transition-colors text-sm text-[#EDE6D6]"
-              style={{ fontFamily: "Fraunces, serif" }}
-            >
-              <Send size={14} /> {enviando ? "Enviando..." : "Enviar apelación"}
-            </button>
-          </form>
+          <>
+            {bloqueoLoginEn && (
+              <p className="text-[#e08a8a] text-xs leading-relaxed mb-4" style={{ fontFamily: "Lora, serif" }}>
+                Tenés hasta el{" "}
+                {new Date(bloqueoLoginEn).toLocaleDateString("es-ES", { day: "numeric", month: "long" })} para
+                apelar. Si no lo hacés, un moderador va a bloquear por completo el acceso a esta cuenta.
+              </p>
+            )}
+            <form onSubmit={enviarApelacion} className="mb-7 text-left">
+              <label className="block text-[#7C8B63] text-xs tracking-wide uppercase mb-1.5" style={{ fontFamily: "Lora, serif" }}>
+                Si creés que esto es un error, contá por qué
+              </label>
+              <textarea
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                rows={4}
+                maxLength={1500}
+                className="w-full bg-[#1d1824] border border-[#4a3f52] rounded-sm px-3 py-2.5 text-sm text-[#EDE6D6] placeholder-[#7d7389] focus:outline-none focus:ring-1 focus:ring-[#B08D57] resize-none mb-3"
+                style={{ fontFamily: "Lora, serif" }}
+                placeholder="Explicá tu situación con el mayor detalle posible..."
+              />
+              {err && <p className="text-[#e08a8a] text-xs mb-2">{err}</p>}
+              <button
+                type="submit"
+                disabled={enviando || !texto.trim()}
+                className="w-full flex items-center justify-center gap-1.5 py-3 rounded-sm bg-[#7A2E2E] hover:bg-[#8f3838] disabled:opacity-40 transition-colors text-sm text-[#EDE6D6]"
+                style={{ fontFamily: "Fraunces, serif" }}
+              >
+                <Send size={14} /> {enviando ? "Enviando..." : "Enviar apelación"}
+              </button>
+            </form>
+          </>
         )}
 
         <button

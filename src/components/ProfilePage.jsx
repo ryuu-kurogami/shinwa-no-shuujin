@@ -1,11 +1,31 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart, Clock3, UserX, Bell } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, ScrollText, UserCircle2, Settings, Heart, Clock3, UserX, Bell, Flag, X } from "lucide-react";
 import { StorySeal } from "./StoryCard";
 import { supabase } from "../lib/supabaseClient";
 import EditProfileModal from "./EditProfileModal";
 import ResponderDisputaModal from "./ResponderDisputaModal";
 
 const CATEGORIA_LABEL = { corto: "Corto", novela: "Novela", fanfic: "Fanfic" };
+
+const MOTIVO_REPORTE_LABEL = {
+  contenido_prohibido: "Contenido prohibido",
+  plagio_interno: "Plagio de otro autor del sitio",
+  plagio_externo: "Plagio de una obra externa",
+  spam: "Spam",
+  otro: "Otro",
+};
+
+const ESTADO_REPORTE_BADGE = {
+  pendiente: { label: "Pendiente", className: "bg-[#B08D57]/20 text-[#e8c9a3]" },
+  resuelto: { label: "Resuelto", className: "bg-[#7C8B63]/20 text-[#c3d1a8]" },
+};
+
+function tipoDeReporte(r) {
+  if (r.historia_id) return "una historia";
+  if (r.capitulo_id) return "un capítulo";
+  if (r.comentario_id) return "un comentario";
+  return "contenido del sitio";
+}
 
 const ESTADO_BADGE = {
   pendiente_revision: { label: "Pendiente de revisión", className: "bg-[#B08D57]/20 text-[#e8c9a3]" },
@@ -30,6 +50,7 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
   const [siguiendo, setSiguiendo] = useState([]);
   const [profile, setProfile] = useState(null);
   const [notificaciones, setNotificaciones] = useState(null);
+  const [misReportes, setMisReportes] = useState(null);
   const [disputasPorHistoria, setDisputasPorHistoria] = useState({});
   const [respondiendoDisputa, setRespondiendoDisputa] = useState(null);
   const [editandoPerfil, setEditandoPerfil] = useState(false);
@@ -58,6 +79,24 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
     await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
     setNotificaciones((prev) => prev.map((n) => (n.id === id ? { ...n, leida: true } : n)));
   };
+
+  const borrarNotificacion = async (id) => {
+    await supabase.from("notificaciones").delete().eq("id", id);
+    setNotificaciones((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  // Reportes que hizo esta cuenta — la policy "Ver mis propios reportes"
+  // (auth.uid() = reportado_por) es la que habilita esto, sin necesitar
+  // el código de seguimiento que usan los reportantes anónimos.
+  useEffect(() => {
+    supabase
+      .from("reportes")
+      .select("id, historia_id, capitulo_id, comentario_id, motivo, estado, created_at")
+      .eq("reportado_por", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20)
+      .then(({ data }) => setMisReportes(data || []));
+  }, [user.id]);
 
   useEffect(() => {
     supabase
@@ -207,21 +246,64 @@ export default function ProfilePage({ user, stories, onBack, onEdit, onDeleted, 
           </div>
           <div className="space-y-2 mb-10">
             {notificaciones.map((n) => (
-              <button
+              <div
                 key={n.id}
-                onClick={() => !n.leida && marcarNotificacionLeida(n.id)}
-                className={`w-full text-left rounded-sm border px-3.5 py-2.5 transition-colors ${
+                className={`flex items-start gap-2 rounded-sm border px-3.5 py-2.5 transition-colors ${
                   n.leida ? "border-[#4a3f52] bg-[#1d1824]/50" : "border-[#B08D57] bg-[#B08D57]/10"
                 }`}
               >
-                <p className={`text-sm leading-relaxed ${n.leida ? "text-[#7d7389]" : "text-[#EDE6D6]"}`} style={{ fontFamily: "Lora, serif" }}>
-                  {n.mensaje}
-                </p>
-                <p className="text-[#7d7389] text-[11px] mt-1">
-                  {new Date(n.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
-                </p>
-              </button>
+                <button
+                  onClick={() => !n.leida && marcarNotificacionLeida(n.id)}
+                  className="flex-1 min-w-0 text-left"
+                >
+                  <p className={`text-sm leading-relaxed ${n.leida ? "text-[#7d7389]" : "text-[#EDE6D6]"}`} style={{ fontFamily: "Lora, serif" }}>
+                    {n.mensaje}
+                  </p>
+                  <p className="text-[#7d7389] text-[11px] mt-1">
+                    {new Date(n.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </button>
+                <button
+                  onClick={() => borrarNotificacion(n.id)}
+                  className="text-[#7d7389] hover:text-[#e08a8a] transition-colors shrink-0 p-0.5"
+                  title="Borrar notificación"
+                >
+                  <X size={13} />
+                </button>
+              </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {misReportes && misReportes.length > 0 && (
+        <>
+          <div className="flex items-center gap-3 mb-5">
+            <Flag size={16} className="text-[#7C8B63]" />
+            <h2 className="text-[#7C8B63] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+              Mis reportes ({misReportes.length})
+            </h2>
+            <div className="flex-1 h-px bg-[#4a3f52]" />
+          </div>
+          <div className="space-y-2 mb-10">
+            {misReportes.map((r) => {
+              const badge = ESTADO_REPORTE_BADGE[r.estado] || ESTADO_REPORTE_BADGE.pendiente;
+              return (
+                <div key={r.id} className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/50 px-3.5 py-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-[#c9c1d4] text-sm" style={{ fontFamily: "Lora, serif" }}>
+                      Reportaste {tipoDeReporte(r)} por {MOTIVO_REPORTE_LABEL[r.motivo] || "otro motivo"}
+                    </p>
+                    <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0 ${badge.className}`}>
+                      {badge.label}
+                    </span>
+                  </div>
+                  <p className="text-[#7d7389] text-[11px] mt-1">
+                    {new Date(r.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

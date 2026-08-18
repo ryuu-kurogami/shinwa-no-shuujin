@@ -42,6 +42,7 @@ export default function ModeracionPage() {
   const [motivoBaneoPorReporte, setMotivoBaneoPorReporte] = useState({}); // { [reporteId]: texto }
   const [enRevision, setEnRevision] = useState(null);
   const [apelaciones, setApelaciones] = useState(null);
+  const [bloqueosPendientes, setBloqueosPendientes] = useState(null);
   const [baneados, setBaneados] = useState(null);
   const [busqueda, setBusqueda] = useState("");
   const [resultadosBusqueda, setResultadosBusqueda] = useState(null);
@@ -139,7 +140,7 @@ export default function ModeracionPage() {
   const cargarApelaciones = useCallback(async () => {
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, username, baneado_hasta, motivo_baneo, apelacion_texto, apelacion_creada_en")
+      .select("id, username, baneado_hasta, motivo_baneo, apelacion_texto, apelacion_creada_en, bloqueo_login_en")
       .eq("apelacion_estado", "pendiente")
       .order("apelacion_creada_en", { ascending: true });
 
@@ -148,6 +149,22 @@ export default function ModeracionPage() {
       return;
     }
     setApelaciones(data || []);
+  }, []);
+
+  // Permanentes sin apelación pendiente, esperando (o ya pasados) los 3
+  // días — acá el moderador aplica el bloqueo real de login a mano.
+  const cargarBloqueosPendientes = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, username, motivo_baneo, bloqueo_login_en")
+      .not("bloqueo_login_en", "is", null)
+      .order("bloqueo_login_en", { ascending: true });
+
+    if (error) {
+      setErr("No se pudieron cargar los bloqueos pendientes.");
+      return;
+    }
+    setBloqueosPendientes(data || []);
   }, []);
 
   const cargarEnRevision = useCallback(async () => {
@@ -232,9 +249,10 @@ export default function ModeracionPage() {
     cargar();
     cargarEnRevision();
     cargarApelaciones();
+    cargarBloqueosPendientes();
     cargarBaneados();
     cargarFondos();
-  }, [cargar, cargarEnRevision, cargarApelaciones, cargarBaneados, cargarFondos]);
+  }, [cargar, cargarEnRevision, cargarApelaciones, cargarBloqueosPendientes, cargarBaneados, cargarFondos]);
 
   // Notificación in-app simple — si userId es null (reportante anónimo,
   // o contenido sin autor identificable), no hace nada.
@@ -321,6 +339,10 @@ export default function ModeracionPage() {
         infracciones: (perfilActual?.infracciones || 0) + 1,
         motivo_baneo: motivoTexto,
         ya_tuvo_baneo_30_dias: perfilActual?.ya_tuvo_baneo_30_dias || horas === 720 || esPermanente,
+        // Un permanente nuevo abre la ventana de 3 días para apelar antes
+        // de que se aplique el bloqueo real de login (manual por ahora,
+        // ver "Bloqueos de login pendientes" más abajo).
+        bloqueo_login_en: esPermanente ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() : null,
         // Se limpia cualquier apelación anterior — este es un baneo nuevo.
         apelacion_estado: null,
         apelacion_texto: null,
@@ -328,17 +350,12 @@ export default function ModeracionPage() {
       })
       .eq("id", authorId);
 
-    // El baneo real de Supabase Auth (bloquea el login en sí) solo se
-    // aplica al permanente — los temporales siguen siendo el mecanismo
-    // "suave" de siempre (puede seguir logueándose y leyendo).
-    if (esPermanente) {
-      const { error: errAuth } = await supabase.functions.invoke("ban-user-auth", {
-        body: { target_user_id: authorId, accion: "banear" },
-      });
-      if (errAuth) {
-        alert("El baneo se guardó en el sitio, pero falló al bloquear el login real. Revisá los logs de la función ban-user-auth.");
-      }
-    }
+    // El baneo real de Supabase Auth (bloquea el login en sí) YA NO se
+    // aplica acá para los permanentes — hay una ventana de 3 días para
+    // apelar antes de eso. El moderador lo aplica manualmente desde
+    // "Bloqueos de login pendientes" cuando se cumple el plazo sin
+    // apelación. Los temporales nunca bloquean el login (mecanismo
+    // "suave": puede seguir logueándose y leyendo).
 
     const duracionTexto = esPermanente ? "de forma permanente" : `por ${horas} horas`;
     await notificar(r.reportado_por, `Tu reporte sobre "${tituloDe(r)}" fue aprobado — se aplicó una suspensión ${duracionTexto} a la cuenta responsable.`);
@@ -363,12 +380,24 @@ export default function ModeracionPage() {
   };
 
   // Resolver una apelación manteniendo el baneo — se limpia solo el estado
-  // de apelación, el baneo sigue activo tal cual estaba.
+  // de apelación. Si era un permanente, la apelación era justamente lo
+  // único que frenaba el bloqueo real de login — al rechazarla, se aplica
+  // ahora mismo, sin esperar el resto de los 3 días.
   const mantenerBaneoApelado = async (apelacion) => {
     await supabase
       .from("profiles")
-      .update({ apelacion_estado: "rechazada", apelacion_texto: null })
+      .update({ apelacion_estado: "rechazada", apelacion_texto: null, bloqueo_login_en: null })
       .eq("id", apelacion.id);
+
+    if (apelacion.baneado_hasta === PERMANENTE_ISO) {
+      const { error: errAuth } = await supabase.functions.invoke("ban-user-auth", {
+        body: { target_user_id: apelacion.id, accion: "banear" },
+      });
+      if (errAuth) {
+        alert("Se mantuvo el baneo, pero falló al bloquear el login real. Revisá los logs de la función ban-user-auth.");
+      }
+    }
+
     await notificar(apelacion.id, "Revisamos tu apelación — la suspensión se mantiene.");
     cargarApelaciones();
   };
@@ -383,6 +412,7 @@ export default function ModeracionPage() {
         motivo_baneo: null,
         apelacion_estado: null,
         apelacion_texto: null,
+        bloqueo_login_en: null,
       })
       .eq("id", apelacion.id);
 
@@ -398,6 +428,21 @@ export default function ModeracionPage() {
     await notificar(apelacion.id, "Revisamos tu apelación — la suspensión se levantó.");
     cargarApelaciones();
     cargarBaneados();
+  };
+
+  // Aplica el bloqueo real de login a mano — para cuando ya pasaron los 3
+  // días sin apelación (o el moderador decide no esperar más).
+  const aplicarBloqueoLogin = async (u) => {
+    if (!window.confirm(`¿Aplicar el bloqueo real de login a "${u.username || "esta cuenta"}"? Ya no va a poder iniciar sesión.`)) return;
+    const { error: errAuth } = await supabase.functions.invoke("ban-user-auth", {
+      body: { target_user_id: u.id, accion: "banear" },
+    });
+    if (errAuth) {
+      alert("Falló al bloquear el login real. Revisá los logs de la función ban-user-auth.");
+      return;
+    }
+    await supabase.from("profiles").update({ bloqueo_login_en: null }).eq("id", u.id);
+    cargarBloqueosPendientes();
   };
 
   const quitarBaneo = async (usuario) => {
@@ -712,6 +757,58 @@ export default function ModeracionPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ---------- Bloqueos de login pendientes (permanentes sin apelar) ---------- */}
+      <div className="flex items-center gap-2 mb-4">
+        <Clock3 size={13} className="text-[#e08a8a]" />
+        <h2 className="text-[#e08a8a] text-xs tracking-[0.2em] uppercase" style={{ fontFamily: "Lora, serif" }}>
+          Bloqueos de login pendientes {bloqueosPendientes !== null ? `— ${bloqueosPendientes.length}` : ""}
+        </h2>
+        <div className="flex-1 h-px bg-[#4a3f52]" />
+      </div>
+
+      {bloqueosPendientes === null ? (
+        <p className="text-[#7d7389] mb-10" style={{ fontFamily: "Lora, serif" }}>Cargando...</p>
+      ) : bloqueosPendientes.length === 0 ? (
+        <p className="text-[#7d7389] italic mb-10" style={{ fontFamily: "Lora, serif" }}>
+          No hay baneos permanentes esperando el bloqueo de login.
+        </p>
+      ) : (
+        <div className="space-y-3 mb-10">
+          {bloqueosPendientes.map((u) => {
+            const vencido = new Date(u.bloqueo_login_en) <= new Date();
+            return (
+              <div
+                key={u.id}
+                className={`flex items-center justify-between gap-3 rounded-sm border p-4 flex-wrap ${
+                  vencido ? "border-[#7A2E2E] bg-[#7A2E2E]/10" : "border-[#4a3f52] bg-[#1d1824]/80"
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="text-[#EDE6D6] text-sm" style={{ fontFamily: "Lora, serif" }}>
+                    <strong>{u.username || "(sin nombre de usuario)"}</strong>
+                  </p>
+                  {u.motivo_baneo && (
+                    <p className="text-[#7d7389] text-xs mt-0.5" style={{ fontFamily: "Lora, serif" }}>{u.motivo_baneo}</p>
+                  )}
+                  <p className={`text-xs mt-1 ${vencido ? "text-[#e08a8a]" : "text-[#7d7389]"}`} style={{ fontFamily: "Lora, serif" }}>
+                    {vencido
+                      ? "Ya se cumplieron los 3 días sin apelación — listo para bloquear."
+                      : `Plazo hasta el ${new Date(u.bloqueo_login_en).toLocaleDateString("es-ES")}.`}
+                  </p>
+                </div>
+                <button
+                  onClick={() => aplicarBloqueoLogin(u)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-sm border border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10 transition-colors shrink-0"
+                  style={{ fontFamily: "Lora, serif" }}
+                >
+                  <UserX size={12} /> Aplicar bloqueo de login
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 

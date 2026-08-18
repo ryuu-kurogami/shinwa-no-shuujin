@@ -114,7 +114,7 @@ export default function App() {
     }
     supabase
       .from("profiles")
-      .select("username, eliminar_en, baneado_hasta, motivo_baneo, apelacion_estado")
+      .select("username, eliminar_en, baneado_hasta, motivo_baneo, apelacion_estado, bloqueo_login_en")
       .eq("id", user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -125,6 +125,7 @@ export default function App() {
             hasta: data.baneado_hasta,
             motivo: data.motivo_baneo || null,
             apelacionEstado: data.apelacion_estado || null,
+            bloqueoLoginEn: data.bloqueo_login_en || null,
           });
         } else {
           setBaneoActivo(null);
@@ -347,6 +348,7 @@ export default function App() {
           baneadoHasta={baneoActivo.hasta}
           motivoBaneo={baneoActivo.motivo}
           apelacionEstado={baneoActivo.apelacionEstado}
+          bloqueoLoginEn={baneoActivo.bloqueoLoginEn}
           onSignOut={() => supabase.auth.signOut()}
         />
       )}
@@ -477,6 +479,13 @@ export default function App() {
               )}
             </main>
 
+            <footer className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pb-14">
+              <div className="h-px bg-[#4a3f52] mb-5" />
+              <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
+                Las historias y los comentarios públicos son visibles para cualquiera que abra esta página. Los
+                comentarios privados solo los ve el autor de la historia.
+              </p>
+            </footer>
           </>
         )}
 

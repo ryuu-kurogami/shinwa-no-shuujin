@@ -24,12 +24,14 @@ const MONEDA = "₲";
 // Completá los links reales cuando tengas las cuentas creadas — mientras
 // una red no tenga url, no se muestra.
 const REDES = [
-  { label: "Facebook", url: "" },
-  { label: "Discord", url: "" },
-  { label: "Reddit", url: "" },
+  { label: "Facebook", url: "https://www.facebook.com/profile.php?id=61593569725503" },
+  { label: "Discord", url: "https://discord.gg/VR68yTfAt" },
+  { label: "Reddit", url: "https://www.reddit.com/r/Shinwa_no_Shuujin/" },
 ];
 
-const CONTACTO = "shinwanoshuujin@gmail.com";
+const KOFI_URL = "https://ko-fi.com/shinwanoshuujin";
+
+const CONTACTO = "soporte.shinwanoshuujin@gmail.com";
 
 function formatMonto(n) {
   return `${MONEDA} ${Number(n || 0).toLocaleString("es-PY")}`;
@@ -167,6 +169,16 @@ export default function TransparenciaPage({ onBack, isAdmin }) {
         </h2>
         <div className="flex-1 h-px bg-[#4a3f52]" />
       </div>
+
+      <a
+        href={KOFI_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-sm border border-[#7A2E2E] text-[#e08a8a] hover:bg-[#7A2E2E]/10 transition-colors text-sm tracking-wide mb-4"
+        style={{ fontFamily: "Lora, serif" }}
+      >
+        <Heart size={15} /> Apoyar el Sitio en Ko-fi
+      </a>
 
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="rounded-sm border border-[#4a3f52] bg-[#1d1824]/80 p-4">

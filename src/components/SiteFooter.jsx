@@ -11,7 +11,7 @@ export default function SiteFooter() {
   return (
     <footer className="max-w-3xl mx-auto px-5 pt-10 pb-8 mt-6 border-t border-[#4a3f52]/60">
       <p className="text-[#7d7389] text-xs leading-relaxed mb-3" style={{ fontFamily: "Lora, serif" }}>
-        Shinwa no Shuujin es un proyecto sin fines de lucro. El autor de cada obra conserva sus derechos sobre
+        Shinwa no Shuujin es un proyecto independiente y personal, sin fines de lucro para su creador. El autor de cada obra conserva sus derechos sobre
         ella; publicarla acá no le transfiere la propiedad al Sitio ni a terceros. El Sitio respeta los
         derechos de autor de obras de terceros y actúa ante reportes de infracción con evidencia razonable.
       </p>
