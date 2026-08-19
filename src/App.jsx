@@ -17,6 +17,8 @@ import UsernameGate from "./components/UsernameGate";
 import TransparenciaPage from "./components/TransparenciaPage";
 import DeletionPendingGate from "./components/DeletionPendingGate";
 import BanApelacionGate from "./components/BanApelacionGate";
+import CognoscerePage from "./components/CognoscerePage";
+import CognoscereGate from "./components/CognoscereGate";
 import SiteFooter from "./components/SiteFooter";
 
 const CATEGORIAS = [
@@ -479,13 +481,6 @@ export default function App() {
               )}
             </main>
 
-            <footer className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pb-14">
-              <div className="h-px bg-[#4a3f52] mb-5" />
-              <p className="text-[#7d7389] text-xs" style={{ fontFamily: "Lora, serif" }}>
-                Las historias y los comentarios públicos son visibles para cualquiera que abra esta página. Los
-                comentarios privados solo los ve el autor de la historia.
-              </p>
-            </footer>
           </>
         )}
 
@@ -619,6 +614,7 @@ export default function App() {
         )}
 
         {tab === "moderacion" && isAdmin && <ModeracionPage />}
+        {tab === "cognoscere" && (user ? <CognoscerePage user={user} isAdmin={isAdmin} /> : <CognoscereGate />)}
         {tab === "adultos" && (
           <div className="max-w-3xl 2xl:max-w-4xl mx-auto px-5 pt-10 pb-24">
             <button

@@ -1,9 +1,10 @@
 import React from "react";
-import { Archive, Compass, Bookmark, UserCircle2, Feather, ShieldAlert } from "lucide-react";
+import { Archive, Compass, Bookmark, UserCircle2, Feather, ShieldAlert, ScrollText } from "lucide-react";
 
 const TABS = [
   { value: "archivo", label: "Archaium", icon: Archive },
   { value: "explorar", label: "Vestigare", icon: Compass },
+  { value: "cognoscere", label: "Cognoscere", icon: ScrollText },
   { value: "biblioteca", label: "Armarium", icon: Bookmark },
   { value: "perfil", label: "Adumbratio", icon: UserCircle2 },
   { value: "escribir", label: "Fabricari", icon: Feather },

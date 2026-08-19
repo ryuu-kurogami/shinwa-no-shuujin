@@ -127,7 +127,7 @@ export default function TransparenciaPage({ onBack, isAdmin }) {
         {tiempoActivo(FECHA_LANZAMIENTO)} activo
       </p>
       <p className="text-[#b8afc4] text-[15px] leading-relaxed mb-10 max-w-xl" style={{ fontFamily: "Lora, serif" }}>
-        Un espacio gratuito y sin fines de lucro para leer y publicar ficción — relatos cortos, novelas y
+        Un espacio gratuito para leer y publicar ficción — relatos cortos, novelas y
         fanfics. Un proyecto de una sola persona, hecho por amor a la escritura y a la lectura.
       </p>
 
